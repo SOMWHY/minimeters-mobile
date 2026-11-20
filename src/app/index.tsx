@@ -1,5 +1,5 @@
-import { PcmMonitorScreen } from '@/features/monitoring/PcmMonitorScreen';
+import { DashboardScreen } from '@/features/dashboard/DashboardScreen';
 
 export default function HomeScreen() {
-  return <PcmMonitorScreen />;
+  return <DashboardScreen />;
 }
