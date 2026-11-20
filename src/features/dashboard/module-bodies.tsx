@@ -18,46 +18,13 @@ import type { FrameAnalysis } from '@/features/monitoring/analysis';
 import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
 
 import { SPECTROGRAM_HISTORY_ROWS } from './history';
+import { toScopeBlock } from './scope-block';
 import {
   LOUDNESS_BAR_DB_RANGE,
   loudnessValues,
   SPECTRUM_DB_RANGE,
   vuLevels,
 } from './module-values';
-
-function toBlock(frame: PcmAudioFrame | null): PcmBlock | null {
-  if (!frame) {
-    return null;
-  }
-
-  return {
-    samples: frame.samples,
-    channels: frame.channels,
-    samplesPerChannel: frame.samplesPerChannel,
-  };
-}
-
-/**
- * The scopes draw a linear picture of the samples, which at a normal listening
- * level is a nearly flat line. They get the auto-gained copy instead; the meters
- * (VU, loudness, spectrum) keep reading the untouched frame above.
- */
-function toScopeBlock(
-  frame: PcmAudioFrame | null,
-  analysis: FrameAnalysis | null,
-): PcmBlock | null {
-  if (!frame) {
-    return null;
-  }
-
-  const samples = analysis?.displaySamples;
-
-  if (!samples || samples.length !== frame.samples.length) {
-    return toBlock(frame);
-  }
-
-  return { samples, channels: frame.channels, samplesPerChannel: frame.samplesPerChannel };
-}
 
 export type ModuleBodyProps = {
   readonly item: DashboardItem;
@@ -67,6 +34,8 @@ export type ModuleBodyProps = {
   /** `null` until the first frame arrives, so modules show their waiting state. */
   readonly analysis: FrameAnalysis | null;
   readonly history: readonly Float32Array[];
+  /** Recent auto-gained blocks, oldest first — the waveform's picture of the past. */
+  readonly scopeFrames: readonly PcmBlock[];
 };
 
 /**
@@ -84,13 +53,21 @@ function ModuleBodyBase({
   frame,
   analysis,
   history,
+  scopeFrames,
 }: ModuleBodyProps): ReactElement {
   const height = rect.height;
   const block = toScopeBlock(frame, analysis);
 
   switch (item.kind) {
     case 'waveform':
-      return <WaveformModule theme={theme} block={block} height={height} />;
+      return (
+        <WaveformModule
+          theme={theme}
+          frames={scopeFrames.length > 0 ? scopeFrames : null}
+          block={block}
+          height={height}
+        />
+      );
     case 'oscilloscope':
       return <OscilloscopeModule theme={theme} block={block} height={height} />;
     case 'vectorscope':

@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { PcmBlock } from '@minimetermobile/ui';
+
 import { usePcmConnection } from '@/features/connection/connection-context';
 import type { FrameAnalysis } from '@/features/monitoring/analysis';
 import { createAnalysisEngine } from '@/features/monitoring/engine';
 
 import { appendRow } from './history';
+import { appendScopeFrame } from './scope-history';
+import { toScopeBlock } from './scope-block';
 
 export type LiveAnalysis = {
   readonly analysis: FrameAnalysis | null;
   readonly history: readonly Float32Array[];
+  /** Recent scope blocks (auto-gained), oldest first, for the waveform picture. */
+  readonly scopeFrames: readonly PcmBlock[];
   /** Clear the accumulated history, e.g. after disconnecting from the plugin. */
   readonly reset: () => void;
 };
@@ -35,6 +41,7 @@ export function useLiveAnalysis(): LiveAnalysis {
   const [live, setLive] = useState<Omit<LiveAnalysis, 'reset'>>({
     analysis: null,
     history: [],
+    scopeFrames: [],
   });
   const engineRef = useRef<ReturnType<typeof createAnalysisEngine> | null>(null);
   const sessionIdRef = useRef(sessionId);
@@ -63,14 +70,16 @@ export function useLiveAnalysis(): LiveAnalysis {
 
         setLive((previous) => {
           let history = isNewSession ? [] : previous.history;
+          let scopeFrames: readonly PcmBlock[] = isNewSession ? [] : previous.scopeFrames;
           let analysis: FrameAnalysis | null = null;
 
           for (const frame of frames) {
             analysis = engine.push(frame);
             history = appendRow(history, analysis.spectrogramRow);
+            scopeFrames = appendScopeFrame(scopeFrames, toScopeBlock(frame, analysis));
           }
 
-          return { analysis, history };
+          return { analysis, history, scopeFrames };
         });
       }),
     [subscribeFrames],
@@ -78,7 +87,7 @@ export function useLiveAnalysis(): LiveAnalysis {
 
   const reset = useCallback(() => {
     engineRef.current?.reset();
-    setLive({ analysis: null, history: [] });
+    setLive({ analysis: null, history: [], scopeFrames: [] });
   }, []);
 
   return { ...live, reset };

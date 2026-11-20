@@ -55,7 +55,7 @@ export type DashboardScreenProps = {
 
 export function DashboardScreen({ storage }: DashboardScreenProps) {
   const stream = usePcmConnection();
-  const { analysis, history } = useLiveAnalysis();
+  const { analysis, history, scopeFrames } = useLiveAnalysis();
 
   const { width, height } = useWindowDimensions();
   const scheme = useColorScheme();
@@ -171,6 +171,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
                   frame={stream.frame}
                   analysis={analysis}
                   history={history}
+                  scopeFrames={scopeFrames}
                 />
               )}
             />

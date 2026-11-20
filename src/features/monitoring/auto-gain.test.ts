@@ -52,11 +52,13 @@ describe('createAutoGain', () => {
     const gain = createAutoGain();
 
     // -14 dBFS: a healthy mix, drawn at 20% of the card without auto-gain.
+    // The ceiling is +12 dB, so it lands near 80%, not pinned to the top.
     const out = run(gain, 0.2, 200);
 
-    expect(peakOf(out)).toBeGreaterThan(0.75);
+    expect(peakOf(out)).toBeGreaterThan(0.7);
     expect(peakOf(out)).toBeLessThanOrEqual(1);
     expect(gain.gainDb()).toBeGreaterThan(10);
+    expect(gain.gainDb()).toBeLessThanOrEqual(12);
   });
 
   it('leaves a hot programme close to unity so loud still looks loud', () => {
@@ -64,8 +66,10 @@ describe('createAutoGain', () => {
 
     run(gain, 0.9, 200);
 
-    expect(gain.gainDb()).toBeLessThan(0.5);
-    expect(gain.gainDb()).toBeGreaterThan(-1.5);
+    // Trimmed toward the 0.75 target rather than held at unity: a hot master
+    // is louder-looking, but it must not be squashed flat against the top.
+    expect(gain.gainDb()).toBeLessThan(-1);
+    expect(gain.gainDb()).toBeGreaterThan(-2.5);
   });
 
   it('never boosts beyond the configured ceiling', () => {

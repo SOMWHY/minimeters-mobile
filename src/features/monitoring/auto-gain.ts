@@ -30,14 +30,14 @@ export interface AutoGainConfig {
 }
 
 export const DEFAULT_AUTO_GAIN: AutoGainConfig = {
-  targetPeak: 0.85,
-  // +30 dB reaches a -30 dBFS passage, where a mix still spends a lot of time;
-  // the quiet floor below keeps the noise floor from being magnified with it.
-  maxGainDb: 30,
+  targetPeak: 0.75,
+  // +12 dB lifts a -20 dBFS passage to a third of the card; more than that
+  // squashes the dynamics the picture is supposed to show.
+  maxGainDb: 12,
   minGainDb: -6,
   attackMs: 20,
-  releaseMs: 700,
-  glideMs: 250,
+  releaseMs: 800,
+  glideMs: 300,
   quietFloorDb: -70,
 };
 

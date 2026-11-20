@@ -109,9 +109,10 @@ describe('createAnalysisEngine', () => {
     const displayPeak = Math.max(...analysis.displaySamples.map(Math.abs));
     const rawPeak = analysis.levels[0].peak;
 
-    // -20 dBFS drawn at 10% height is the complaint this fixes.
+    // -20 dBFS drawn at 10% height is the complaint this fixes: at the +12 dB
+    // ceiling it now covers ~40% of the card.
     expect(rawPeak).toBeLessThan(0.15);
-    expect(displayPeak).toBeGreaterThan(0.7);
+    expect(displayPeak).toBeGreaterThan(0.3);
     expect(displayPeak).toBeLessThanOrEqual(1);
 
     // Metering is unchanged by the display gain.
