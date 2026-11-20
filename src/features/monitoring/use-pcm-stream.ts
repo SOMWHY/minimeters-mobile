@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { parsePairingPayload, type PairingPayload } from '@/features/connection/pairing';
+import { recordStreamDrain } from '@/features/monitoring/stream-metrics';
 import {
   PcmSocketClient,
   type PcmConnectionState,
@@ -222,6 +223,7 @@ export function usePcmStream({
     lastFrameAtRef.current = Date.now();
 
     const refresh = () => {
+      const startedAt = Date.now();
       const frames = client.drainFrames();
 
       if (frames.length > 0) {
@@ -231,6 +233,20 @@ export function usePcmStream({
         lastFrameAtRef.current = Date.now();
         setFrame(latest);
         setFrameCount(client.getReceivedFrameCount());
+
+        if (__DEV__) {
+          const frameMs =
+            latest.sampleRate > 0
+              ? (latest.samplesPerChannel / latest.sampleRate) * 1000
+              : 0;
+
+          recordStreamDrain({
+            queueMs: frameMs * frames.length,
+            drainMs: Date.now() - startedAt,
+            frames: frames.length,
+          });
+        }
+
         onFramesRef.current?.(frames);
         onFrameRef.current?.(latest);
         return;

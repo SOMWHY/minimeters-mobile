@@ -35,6 +35,7 @@ import {
   type OrbPosition,
 } from './settings-orb';
 import { SettingsOrb } from './SettingsOrb';
+import { StreamMetricsLine } from '@/features/monitoring/StreamMetricsLine';
 import { useDashboardLayout } from './use-dashboard-layout';
 import { useLiveAnalysis } from './use-live-analysis';
 
@@ -340,6 +341,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
         {editing && hidden.length > 0 && (
           <ScrollView testID="hidden-tray" style={styles.tray} nestedScrollEnabled>
             <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
+            <StreamMetricsLine />
           </ScrollView>
         )}
       </SettingsOrb>

@@ -1,0 +1,92 @@
+import { useSyncExternalStore } from 'react';
+
+/**
+ * Dev-only numbers behind "the meters feel laggy".
+ *
+ * The visual latency has three separable parts and they need different fixes:
+ *
+ * - `queueMs` — how much audio is waiting in our own buffer. Non-zero means we
+ *   are processing slower than the server sends (JS thread saturated, or the
+ *   render pass is too expensive). Fixed by dropping frames, not by the network.
+ * - `drainMs` — wall time the analysis + state update for one drain took. If this
+ *   approaches `queueMs`'s per-frame cost we are on the edge of falling behind.
+ * - `gapMs` — interval between drains that actually had frames. It should track
+ *   the server's cadence; a large gap means the network or the socket callback
+ *   is batching messages.
+ *
+ * They are read at 2 Hz through `useStreamMetrics()` so the readout itself does
+ * not add re-renders to the thing it is measuring.
+ */
+export type StreamMetrics = {
+  /** Audio time sitting in the client buffer when the drain started, ms. */
+  readonly queueMs: number;
+  /** Wall time of the drain + analysis pass, ms. */
+  readonly drainMs: number;
+  /** Interval between drains that had frames, ms. */
+  readonly gapMs: number;
+  /** Frames taken by the last drain. */
+  readonly frames: number;
+};
+
+const EMPTY: StreamMetrics = {
+  queueMs: 0,
+  drainMs: 0,
+  gapMs: 0,
+  frames: 0,
+};
+
+let current: StreamMetrics = EMPTY;
+let lastDrainAt = 0;
+const listeners = new Set<() => void>();
+
+/**
+ * Called once per drain that had frames. The gap is measured here so callers do
+ * not have to carry a timestamp of their own.
+ */
+export function recordStreamDrain(next: {
+  readonly queueMs: number;
+  readonly drainMs: number;
+  readonly frames: number;
+}): void {
+  const now = Date.now();
+  const gapMs = lastDrainAt === 0 ? 0 : now - lastDrainAt;
+
+  lastDrainAt = now;
+  current = { ...next, gapMs };
+
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+export function resetStreamMetrics(): void {
+  current = EMPTY;
+  lastDrainAt = 0;
+
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+export function getStreamMetrics(): StreamMetrics {
+  return current;
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function useStreamMetrics(): StreamMetrics {
+  return useSyncExternalStore(subscribe, getStreamMetrics, getStreamMetrics);
+}
+
+/** One compact line for the settings panel. */
+export function formatStreamMetrics(metrics: StreamMetrics): string {
+  return `queue ${Math.round(metrics.queueMs)}ms · drain ${metrics.drainMs.toFixed(
+    1,
+  )}ms · gap ${Math.round(metrics.gapMs)}ms · ${metrics.frames}f`;
+}
