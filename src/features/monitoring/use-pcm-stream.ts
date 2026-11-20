@@ -246,6 +246,13 @@ export function usePcmStream({
 
         // Sampled after the callbacks: the analysis runs inside them, so
         // measuring earlier would report a drain that never happened.
+        // TEMP probe: the first drains of a session, verbatim.
+        if (client.getReceivedFrameCount() <= 3) {
+          console.log(
+            `[stream] drain frames=${frames.length} pending=${pending} analyze=${getAnalyzeMs()}`,
+          );
+        }
+
         if (STREAM_METRICS_ENABLED) {
           const frameMs =
             latest.sampleRate > 0

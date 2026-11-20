@@ -47,6 +47,15 @@ const EMPTY: StreamMetrics = {
   analyzeMs: 0,
 };
 
+// TEMP probe: proves which bundle is running and whether the flag was inlined.
+if (process.env.NODE_ENV !== 'test') {
+  console.log(
+    `[stream] bundle: __DEV__=${String(__DEV__)} env=${String(
+      process.env.EXPO_PUBLIC_STREAM_METRICS,
+    )} enabled=${String(__DEV__ || process.env.EXPO_PUBLIC_STREAM_METRICS === '1')}`,
+  );
+}
+
 let current: StreamMetrics = EMPTY;
 let lastDrainAt = 0;
 const listeners = new Set<() => void>();

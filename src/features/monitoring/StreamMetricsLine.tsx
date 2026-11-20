@@ -47,7 +47,7 @@ export function StreamMetricsLine({ color }: { color: string }): React.ReactNode
 
   return (
     <Text testID="stream-metrics" style={[styles.line, { color }]}>
-      {`${BUILD_TAG} · ${line}`}
+      {`${BUILD_TAG}[e${STREAM_METRICS_ENABLED ? 1 : 0}] · ${line}`}
     </Text>
   );
 }
