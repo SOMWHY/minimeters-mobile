@@ -175,11 +175,6 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
               )}
             />
           )}
-
-          <ThemedText type="small" themeColor="textSecondary">
-            Spectrum, VU, loudness and the spectrogram are derived on the phone from the raw PCM
-            stream — the plugin only sends audio.
-          </ThemedText>
         </ScrollView>
 
         {/*
