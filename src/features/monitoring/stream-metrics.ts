@@ -90,6 +90,10 @@ export function recordStreamDrain(next: {
   lastDrainAt = now;
   current = { ...next, gapMs };
 
+  if (process.env.NODE_ENV !== 'test') {
+    console.log(`[stream] write gap=${gapMs} drain=${next.drainMs}`);
+  }
+
   for (const listener of listeners) {
     listener();
   }

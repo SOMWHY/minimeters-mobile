@@ -33,7 +33,7 @@ export function StreamMetricsLine({ color }: { color: string }): React.ReactNode
       setLine(formatStreamMetrics(metrics));
       // Also on the Metro terminal so the numbers can be copied verbatim
       // instead of read off a phone screen.
-      console.log(`[stream] ${JSON.stringify(metrics)}`);
+      console.log(`[stream] read ${JSON.stringify(metrics)}`);
     }, 1000);
 
     return () => {
