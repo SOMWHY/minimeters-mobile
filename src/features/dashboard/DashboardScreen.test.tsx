@@ -5,6 +5,8 @@ import { THEME_STORAGE_KEY } from './layout-storage';
 import { PcmConnectionProvider } from '@/features/connection/connection-context';
 import type { SocketFactory, SocketHandlers } from '@/features/connection/pcm-socket-client';
 import { pcmPairing } from '@/features/connection/test-fixtures';
+import { STALL_TIMEOUT_MS } from '@/features/connection/reconnect';
+import { STREAM_REFRESH_MS } from '@/features/monitoring/use-pcm-stream';
 
 import { DashboardScreen } from './DashboardScreen';
 import type { LayoutStorageDeps } from './layout-storage';
@@ -204,6 +206,158 @@ describe('DashboardScreen', () => {
     await layoutGrid(screen);
 
     expect(screen.getByText('module:spectrum')).toBeTruthy();
+
+    screen.unmount();
+  });
+
+  it('mounts the scanner in a full-screen overlay with scrolling available', async () => {
+    const screen = await renderScreen({ storage: memoryStorage() });
+
+    await fireEvent.press(screen.getByText('Scan plugin QR code'));
+
+    expect(screen.getByTestId('pairing-scanner-overlay')).toBeTruthy();
+    // The preview must not live inside the scroll view, which is what made the
+    // Android surface render black.
+    expect(screen.getByTestId('pairing-scanner-overlay')).toContainElement(
+      screen.getByTestId('camera-view'),
+    );
+    expect(screen.getByTestId('dashboard-scroll').props.scrollEnabled).toBe(true);
+
+    screen.unmount();
+  });
+
+  it('keeps edit controls and the hidden tray in the pinned bar while editing', async () => {
+    const storage = memoryStorage();
+    storage.store.set(
+      'minimeters.dashboard.layout.v1',
+      JSON.stringify({
+        version: 1,
+        items: [
+          {
+            id: 'spectrum',
+            kind: 'spectrum',
+            visible: false,
+            placement: { col: 0, row: 0, colSpan: 2, rowSpan: 1 },
+          },
+        ],
+      }),
+    );
+
+    const screen = await renderScreen({ storage });
+    await act(async () => {});
+
+    await fireEvent.press(screen.getByText('Scan plugin QR code'));
+    await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
+      data: JSON.stringify(pcmPairing),
+    });
+
+    await fireEvent.press(screen.getByText('Edit layout'));
+
+    // Scrolling is disabled while editing, so these must sit outside the scroll view.
+    expect(screen.getByTestId('dashboard-scroll').props.scrollEnabled).toBe(false);
+    expect(screen.getByTestId('pinned-bar')).toContainElement(
+      screen.getByText('Reset layout'),
+    );
+    expect(screen.getByTestId('pinned-bar')).toContainElement(
+      screen.getByTestId('hidden-tray'),
+    );
+    expect(screen.getByText('Done')).toBeTruthy();
+
+    screen.unmount();
+  });
+
+  it('reconnects after the socket drops', async () => {
+    const handlers: SocketHandlers[] = [];
+    const socketFactory: SocketFactory = jest.fn((_url, socketHandlers) => {
+      handlers.push(socketHandlers);
+      return { send: jest.fn(), close: jest.fn() };
+    });
+    const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
+
+    await fireEvent.press(screen.getByText('Scan plugin QR code'));
+    await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
+      data: JSON.stringify(pcmPairing),
+    });
+    await act(async () => handlers[0]?.onOpen());
+    await act(async () =>
+      handlers[0]?.onMessage(
+        JSON.stringify({ type: 'authenticated', version: 1, sampleFormat: 'f32le' }),
+      ),
+    );
+    expect(socketFactory).toHaveBeenCalledTimes(1);
+
+    await act(async () => handlers[0]?.onClose?.());
+    expect(screen.getByTestId('connection-banner')).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(socketFactory).toHaveBeenCalledTimes(2);
+
+    screen.unmount();
+  });
+
+  it('rebuilds a socket that stays open but stops delivering audio', async () => {
+    const handlers: SocketHandlers[] = [];
+    const socketFactory: SocketFactory = jest.fn((_url, socketHandlers) => {
+      handlers.push(socketHandlers);
+      return { send: jest.fn(), close: jest.fn() };
+    });
+    const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
+
+    await fireEvent.press(screen.getByText('Scan plugin QR code'));
+    await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
+      data: JSON.stringify(pcmPairing),
+    });
+    await act(async () => handlers[0]?.onOpen());
+    await act(async () =>
+      handlers[0]?.onMessage(
+        JSON.stringify({ type: 'authenticated', version: 1, sampleFormat: 'f32le' }),
+      ),
+    );
+    expect(socketFactory).toHaveBeenCalledTimes(1);
+
+    // The server never sends a keepalive, so silence is indistinguishable from a
+    // dead link: give it a couple of seconds and rebuild the connection.
+    await act(async () => {
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS + STREAM_REFRESH_MS);
+    });
+
+    expect(socketFactory).toHaveBeenCalledTimes(2);
+
+    screen.unmount();
+  });
+
+  it('stops retrying once the server rejects the pairing code', async () => {
+    const handlers: SocketHandlers[] = [];
+    const socketFactory: SocketFactory = jest.fn((_url, socketHandlers) => {
+      handlers.push(socketHandlers);
+      return { send: jest.fn(), close: jest.fn() };
+    });
+    const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
+
+    await fireEvent.press(screen.getByText('Scan plugin QR code'));
+    await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
+      data: JSON.stringify(pcmPairing),
+    });
+    await act(async () => handlers[0]?.onOpen());
+
+    await act(async () =>
+      handlers[0]?.onMessage(
+        JSON.stringify({ type: 'error', code: 'invalid_token', message: 'Pairing code expired' }),
+      ),
+    );
+
+    expect(screen.getByText('The pairing code expired. Scan the plugin QR code again.')).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(60_000);
+    });
+
+    // The server only checks the token during the handshake, so retrying an
+    // expired one would fail forever — the user has to scan again.
+    expect(socketFactory).toHaveBeenCalledTimes(1);
 
     screen.unmount();
   });

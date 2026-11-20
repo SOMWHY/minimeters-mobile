@@ -21,7 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import type { PcmConnectionState } from '@/features/connection/pcm-socket-client';
 import { usePcmConnection } from '@/features/connection/connection-context';
-import { PairingScanner } from '@/features/monitoring/PairingScanner';
+import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
 
 import { gridForWidth } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
@@ -40,6 +40,12 @@ const connectionLabels: Record<PcmConnectionState, string> = {
   error: 'Connection error',
 };
 
+const fatalMessages = {
+  auth: 'The pairing code expired. Scan the plugin QR code again.',
+  protocol: 'The plugin and the phone disagree about the audio format.',
+  unreachable: 'Lost the connection to the plugin.',
+} as const;
+
 export type DashboardScreenProps = {
   /** Injected for tests; defaults to device storage. */
   storage?: LayoutStorageDeps;
@@ -47,7 +53,7 @@ export type DashboardScreenProps = {
 
 export function DashboardScreen({ storage }: DashboardScreenProps) {
   const stream = usePcmConnection();
-  const { analysis, history, reset: resetLiveAnalysis } = useLiveAnalysis();
+  const { analysis, history } = useLiveAnalysis();
 
   const { width } = useWindowDimensions();
   const scheme = useColorScheme();
@@ -76,10 +82,24 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     setLayout({ items: setVisibility(layout.items, id, true, config) });
   };
 
+  const banner = stream.fatalError
+    ? fatalMessages[stream.fatalError]
+    : stream.reconnecting
+      ? `Reconnecting… (attempt ${stream.retryAttempt})`
+      : stream.connectionError
+        ? `Error: ${stream.connectionError}`
+        : stream.protocolError
+          ? `Protocol error: ${stream.protocolError}`
+          : null;
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content} scrollEnabled={!editing}>
+        <ScrollView
+          testID="dashboard-scroll"
+          contentContainerStyle={styles.content}
+          scrollEnabled={!editing}
+        >
           <View style={styles.header}>
             <View style={styles.headerText}>
               <ThemedText type="subtitle">Dashboard</ThemedText>
@@ -91,34 +111,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
                   : 'Not paired'}
               </ThemedText>
             </View>
-            {stream.isPaired && (
-              <View style={styles.headerActions}>
-                <Button
-                  title={editing ? 'Done' : 'Edit'}
-                  onPress={() => setEditing((current) => !current)}
-                />
-              </View>
-            )}
           </View>
-
-          {!stream.isPaired && !stream.isScanning && (
-            <Button title="Scan plugin QR code" onPress={stream.startScan} />
-          )}
-
-          {stream.isScanning && (
-            <View style={styles.section}>
-              <PairingScanner active onQrScanned={stream.handleQrScanned} />
-              <Button title="Cancel scan" onPress={stream.cancelScan} />
-            </View>
-          )}
-
-          {stream.scanError && <ThemedText accessibilityRole="alert">{stream.scanError}</ThemedText>}
-          {stream.connectionError && (
-            <ThemedText accessibilityRole="alert">Error: {stream.connectionError}</ThemedText>
-          )}
-          {stream.protocolError && (
-            <ThemedText accessibilityRole="alert">Protocol error: {stream.protocolError}</ThemedText>
-          )}
 
           <View style={styles.toolbar}>
             <ThemedText type="small" themeColor="textSecondary">
@@ -170,30 +163,57 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           )}
 
           <ThemedText type="small" themeColor="textSecondary">
-            Spectrum, VU, loudness and the spectrogram are derived on the phone from the raw
-            PCM stream — the plugin only sends audio.
+            Spectrum, VU, loudness and the spectrogram are derived on the phone from the raw PCM
+            stream — the plugin only sends audio.
           </ThemedText>
+        </ScrollView>
 
-          {editing && layout !== null && (
-            <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
+        {/*
+          Everything the user needs while editing lives here, outside the scroll
+          view: dragging cards disables scrolling, so controls placed at the end
+          of the content can never be reached.
+        */}
+        <View style={styles.pinnedBar} testID="pinned-bar">
+          {banner !== null && (
+            <ThemedText type="small" accessibilityRole="alert" testID="connection-banner">
+              {banner}
+            </ThemedText>
           )}
 
-          {editing && (
-            <View style={styles.footerActions}>
-              <Button title="Reset layout" onPress={resetLayout} />
-            </View>
+          {editing && hidden.length > 0 && (
+            <ScrollView
+              testID="hidden-tray"
+              style={styles.tray}
+              nestedScrollEnabled
+            >
+              <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
+            </ScrollView>
+          )}
+
+          {!stream.isPaired && (
+            <Button title="Scan plugin QR code" onPress={stream.startScan} />
           )}
 
           {stream.isPaired && (
-            <Button
-              title="Disconnect and scan another code"
-              onPress={() => {
-                stream.disconnect();
-                resetLiveAnalysis();
-              }}
-            />
+            <>
+              <View style={styles.pinnedRow}>
+                <Button
+                  title={editing ? 'Done' : 'Edit layout'}
+                  onPress={() => setEditing((current) => !current)}
+                />
+                {editing && <Button title="Reset layout" onPress={resetLayout} />}
+              </View>
+              <Button title="Disconnect" onPress={stream.disconnect} />
+            </>
           )}
-        </ScrollView>
+        </View>
+
+        <PairingScannerOverlay
+          visible={stream.isScanning}
+          error={stream.scanError}
+          onQrScanned={stream.handleQrScanned}
+          onCancel={stream.cancelScan}
+        />
       </SafeAreaView>
     </ThemedView>
   );
@@ -242,16 +262,19 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     gap: 2,
   },
-  headerActions: {
-    flexDirection: 'row',
+  tray: {
+    maxHeight: 180,
+  },
+  pinnedBar: {
     gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    width: '100%',
+    maxWidth: 900,
+    alignSelf: 'center',
   },
-  section: {
-    gap: 12,
-    padding: 12,
-    borderRadius: 16,
-  },
-  footerActions: {
+  pinnedRow: {
     flexDirection: 'row',
     gap: 12,
   },
