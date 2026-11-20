@@ -4,6 +4,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import type { VisualizationTheme } from '@minimetermobile/ui';
 
 import {
+  connectionTone,
+  INDICATOR_COLORS,
+  indicatorLabel,
+  type IndicatorInput,
+} from './connection-indicator';
+import {
   clampOrbPosition,
   ORB_SIZE,
   panelSide,
@@ -22,6 +28,14 @@ export type SettingsOrbProps = {
   readonly onDragEnd: (position: OrbPosition) => void;
   readonly open: boolean;
   readonly onToggle: () => void;
+  /**
+   * Connection state, shown as the dot at the centre of the orb.
+   *
+   * The orb is the only thing pinned to the screen at all times, so it is the
+   * one place a status light is guaranteed to be visible — no separate badge to
+   * collide with the grid or the system bars.
+   */
+  readonly indicator: IndicatorInput;
   /** Panel body, rendered only while open. */
   readonly children: ReactNode;
 };
@@ -51,6 +65,7 @@ export function SettingsOrb({
   onDragEnd,
   open,
   onToggle,
+  indicator,
   children,
 }: SettingsOrbProps) {
   const [position, setPosition] = useState(initialPosition);
@@ -111,6 +126,7 @@ export function SettingsOrb({
   };
 
   const side = panelSide(placed, window);
+  const tone = connectionTone(indicator);
 
   return (
     <View
@@ -149,7 +165,12 @@ export function SettingsOrb({
             { backgroundColor: theme.colors.surface, borderColor: theme.colors.accent },
           ]}
         >
-          <View style={[styles.orbDot, { backgroundColor: theme.colors.accent }]} />
+          <View
+            testID="connection-light"
+            accessibilityRole="image"
+            accessibilityLabel={indicatorLabel(tone)}
+            style={[styles.orbDot, { backgroundColor: INDICATOR_COLORS[tone] }]}
+          />
         </Pressable>
       </View>
     </View>
@@ -178,9 +199,9 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   orbDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     opacity: 0.9,
   },
   panel: {

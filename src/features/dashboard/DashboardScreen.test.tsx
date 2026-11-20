@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
@@ -573,6 +573,20 @@ describe('DashboardScreen fit', () => {
 
     expect(Number.isFinite(height)).toBe(true);
     expect(height).toBeGreaterThan(0);
+
+    screen.unmount();
+  });
+});
+
+describe('DashboardScreen chrome', () => {
+  it('carries the connection light inside the settings orb', async () => {
+    const screen = await renderScreen({ storage: memoryStorage() });
+
+    // The orb is the one thing always on screen, so the status dot lives in it
+    // rather than in a separate badge hugging a corner.
+    expect(within(screen.getByTestId('settings-orb')).getByTestId('connection-light')).toBeTruthy();
+    expect(screen.queryByTestId('connection-light-host')).toBeNull();
+    expect(screen.getAllByTestId('connection-light')).toHaveLength(1);
 
     screen.unmount();
   });

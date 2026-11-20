@@ -24,7 +24,6 @@ import { ThemedView } from '@/components/themed-view';
 import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
 
-import { ConnectionLight } from './ConnectionLight';
 import { fitRowsToViewport, gridForWindow, gridViewport, layoutRowCount } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
@@ -278,24 +277,17 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
         </ScrollView>
       </View>
 
-      <View
-        testID="connection-light-host"
-        pointerEvents="none"
-        style={[styles.lightHost, { top: insets.top + 8 }]}
-      >
-        <ConnectionLight
-          status={stream.status}
-          reauthRequired={stream.reauthRequired}
-          fatalError={stream.fatalError}
-          connectionError={stream.connectionError}
-          protocolError={stream.protocolError}
-        />
-      </View>
-
       <SettingsOrb
         theme={theme}
         window={orbWindow}
         insets={orbInsets}
+        indicator={{
+          status: stream.status,
+          reauthRequired: stream.reauthRequired,
+          fatalError: stream.fatalError,
+          connectionError: stream.connectionError,
+          protocolError: stream.protocolError,
+        }}
         initialPosition={orbPosition}
         onDragEnd={handleOrbDragEnd}
         open={panelOpen}
@@ -374,13 +366,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-  },
-  lightHost: {
-    position: 'absolute',
-    left: 12,
-    width: 12,
-    height: 12,
-    zIndex: 10,
   },
   themeRow: {
     gap: 6,
