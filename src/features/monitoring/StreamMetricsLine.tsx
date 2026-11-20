@@ -4,18 +4,28 @@ import { StyleSheet, Text } from 'react-native';
 import { formatStreamMetrics, getStreamMetrics } from './stream-metrics';
 
 /**
- * Dev-only latency readout.
+ * Latency readout for the phone's audio pipeline.
  *
- * `queue` is how much audio was waiting for us, `drain` how long one
- * analysis pass took, `gap` the interval between drains. Together they say
- * whether a laggy meter is buffering, render cost, or the network — instead of
- * guessing. Samples at 2 Hz so the readout does not re-render what it measures.
+ * It answers three separable questions with numbers instead of guesses: how much
+ * audio was waiting for us, how long the analysis loop took, and how often the
+ * socket actually delivered. Sampling at 1 Hz keeps the readout from re-rendering
+ * what it measures.
  */
+/** Bump when the readout itself changes, so a stale bundle cannot hide. */
+const BUILD_TAG = 'fft+split';
+
+/**
+ * Visible in dev, and in a `--no-dev` bundle when `EXPO_PUBLIC_STREAM_METRICS=1`
+ * — performance numbers have to be readable from a production-mode JS bundle
+ * too, otherwise "dev overhead" can never be ruled out.
+ */
+const ENABLED = __DEV__ || process.env.EXPO_PUBLIC_STREAM_METRICS === '1';
+
 export function StreamMetricsLine({ color }: { color: string }): React.ReactNode {
   const [line, setLine] = useState(() => formatStreamMetrics(getStreamMetrics()));
 
   useEffect(() => {
-    if (!__DEV__) {
+    if (!ENABLED) {
       return;
     }
 
@@ -33,13 +43,13 @@ export function StreamMetricsLine({ color }: { color: string }): React.ReactNode
     };
   }, []);
 
-  if (!__DEV__) {
+  if (!ENABLED) {
     return null;
   }
 
   return (
     <Text testID="stream-metrics" style={[styles.line, { color }]}>
-      {line}
+      {`${BUILD_TAG} · ${line}`}
     </Text>
   );
 }

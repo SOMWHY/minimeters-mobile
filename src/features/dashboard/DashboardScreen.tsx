@@ -347,7 +347,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
       </SettingsOrb>
 
-      {__DEV__ && (
+      {( __DEV__ || process.env.EXPO_PUBLIC_STREAM_METRICS === '1') && (
         <View style={styles.devOverlay} pointerEvents="none">
           <StreamMetricsLine color="#FFFFFF" />
         </View>
