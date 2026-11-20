@@ -4,6 +4,7 @@ import type { PcmBlock } from '@minimetermobile/ui';
 
 import { usePcmConnection } from '@/features/connection/connection-context';
 import type { FrameAnalysis } from '@/features/monitoring/analysis';
+import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
 import { createAnalysisEngine } from '@/features/monitoring/engine';
 
 import { setAnalyzeMs } from '@/features/monitoring/stream-metrics';
@@ -23,6 +24,13 @@ export type LiveAnalysis = {
   readonly meter: FrameAnalysis | null;
   /** Slow lane: what the scopes draw, emitted every `SCOPE_EMIT_EVERY_POLLS`. */
   readonly analysis: FrameAnalysis | null;
+  /**
+   * Newest raw frame, emitted with `analysis`.
+   *
+   * It must ride the slow lane: the cards take it as a prop, so updating it from
+   * the fast lane would fail `memo` on every poll and negate the whole split.
+   */
+  readonly frame: PcmAudioFrame | null;
   readonly history: readonly Float32Array[];
   /** Recent scope blocks (auto-gained), oldest first, for the waveform picture. */
   readonly scopeFrames: readonly PcmBlock[];
@@ -58,9 +66,11 @@ export function useLiveAnalysis(): LiveAnalysis {
   const [meter, setMeter] = useState<FrameAnalysis | null>(null);
   const [live, setLive] = useState<Omit<LiveAnalysis, 'reset' | 'meter'>>({
     analysis: null,
+    frame: null,
     history: [],
     scopeFrames: [],
   });
+  const frameRef = useRef<PcmAudioFrame | null>(null);
   const historyRef = useRef<readonly Float32Array[]>([]);
   const scopeFramesRef = useRef<readonly PcmBlock[]>([]);
   const pollsSinceEmitRef = useRef(0);
@@ -97,6 +107,7 @@ export function useLiveAnalysis(): LiveAnalysis {
 
         for (const frame of frames) {
           latest = engine.push(frame);
+          frameRef.current = frame;
           historyRef.current = appendRow(historyRef.current, latest.spectrogramRow);
           scopeFramesRef.current = appendScopeFrame(
             scopeFramesRef.current,
@@ -123,6 +134,7 @@ export function useLiveAnalysis(): LiveAnalysis {
         pollsSinceEmitRef.current = 0;
         setLive({
           analysis: latest,
+          frame: frameRef.current,
           history: historyRef.current,
           scopeFrames: scopeFramesRef.current,
         });
@@ -135,8 +147,9 @@ export function useLiveAnalysis(): LiveAnalysis {
     historyRef.current = [];
     scopeFramesRef.current = [];
     pollsSinceEmitRef.current = 0;
+    frameRef.current = null;
     setMeter(null);
-    setLive({ analysis: null, history: [], scopeFrames: [] });
+    setLive({ analysis: null, frame: null, history: [], scopeFrames: [] });
   }, []);
 
   return { ...live, meter, reset };
