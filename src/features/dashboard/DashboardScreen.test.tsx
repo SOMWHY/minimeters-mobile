@@ -1,10 +1,10 @@
-import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { THEME_STORAGE_KEY } from './layout-storage';
+import { FULLSCREEN_STORAGE_KEY, THEME_STORAGE_KEY } from './layout-storage';
 import { INDICATOR_COLORS } from './connection-indicator';
 import { PcmConnectionProvider } from '@/features/connection/connection-context';
 import type { SocketFactory, SocketHandlers } from '@/features/connection/pcm-socket-client';
@@ -15,6 +15,19 @@ import { STREAM_REFRESH_MS } from '@/features/monitoring/use-pcm-stream';
 
 import { DashboardScreen } from './DashboardScreen';
 import type { LayoutStorageDeps } from './layout-storage';
+
+// `expo-status-bar` renders nothing on its own (it pushes a value to a native
+// module), so the component is replaced by a marker that exposes what the screen
+// asked for — the wiring is what this test is about, not the native call.
+jest.mock('expo-status-bar', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+
+  return {
+    StatusBar: ({ hidden }: { readonly hidden?: boolean }) =>
+      React.createElement(Text, { testID: 'status-bar' }, hidden ? 'hidden' : 'shown'),
+  };
+});
 
 // The module bodies render Skia canvases, whose ESM build jest cannot load. The
 // screen test is about wiring — pairing, status, layout loading — so stub them.
@@ -67,9 +80,13 @@ const SAFE_AREA_METRICS = {
   insets: { top: 0, bottom: 0, left: 0, right: 0 },
 };
 
-function renderScreen(props: { socketFactory?: SocketFactory; storage?: LayoutStorageDeps }) {
+function renderScreen(props: {
+  socketFactory?: SocketFactory;
+  storage?: LayoutStorageDeps;
+  metrics?: typeof SAFE_AREA_METRICS;
+}) {
   return render(
-    <SafeAreaProvider initialMetrics={SAFE_AREA_METRICS}>
+    <SafeAreaProvider initialMetrics={props.metrics ?? SAFE_AREA_METRICS}>
       <PcmConnectionProvider socketFactory={props.socketFactory}>
         <DashboardScreen storage={props.storage} />
       </PcmConnectionProvider>
@@ -587,6 +604,64 @@ describe('DashboardScreen chrome', () => {
     expect(within(screen.getByTestId('settings-orb')).getByTestId('connection-light')).toBeTruthy();
     expect(screen.queryByTestId('connection-light-host')).toBeNull();
     expect(screen.getAllByTestId('connection-light')).toHaveLength(1);
+
+    screen.unmount();
+  });
+});
+
+describe('DashboardScreen fullscreen', () => {
+  const TOP_INSET_METRICS = {
+    frame: { x: 0, y: 0, width: 390, height: 844 },
+    insets: { top: 40, bottom: 24, left: 0, right: 0 },
+  };
+
+  function paddingTopOf(screen: {
+    getByTestId: (id: string) => { props: { style?: StyleProp<ViewStyle> } };
+  }) {
+    // Flattened because the screen composes the static style with the inset.
+    return StyleSheet.flatten(screen.getByTestId('dashboard-screen').props.style)?.paddingTop;
+  }
+
+  it('hides the status bar and drops the top inset when enabled', async () => {
+    const storage = memoryStorage();
+
+    storage.store.set(FULLSCREEN_STORAGE_KEY, '1');
+
+    const screen = await renderScreen({ storage, metrics: TOP_INSET_METRICS });
+
+    await waitFor(() => expect(paddingTopOf(screen)).toBe(0));
+    expect(screen.getByTestId('status-bar').props.children).toBe('hidden');
+
+    screen.unmount();
+  });
+
+  it('keeps the status bar and its inset while windowed', async () => {
+    const screen = await renderScreen({
+      storage: memoryStorage(),
+      metrics: TOP_INSET_METRICS,
+    });
+
+    expect(paddingTopOf(screen)).toBe(40);
+    expect(screen.getByTestId('status-bar').props.children).toBe('shown');
+
+    screen.unmount();
+  });
+
+  it('persists the toggle from the settings panel', async () => {
+    const storage = memoryStorage();
+    const screen = await renderScreen({ storage, metrics: TOP_INSET_METRICS });
+
+    await openSettingsPanel(screen);
+    await fireEvent(screen.getByTestId('fullscreen-toggle'), 'valueChange', true);
+
+    // The status bar goes away immediately and the choice survives a relaunch.
+    await waitFor(() => expect(paddingTopOf(screen)).toBe(0));
+    expect(storage.store.get(FULLSCREEN_STORAGE_KEY)).toBe('1');
+
+    await fireEvent(screen.getByTestId('fullscreen-toggle'), 'valueChange', false);
+
+    await waitFor(() => expect(paddingTopOf(screen)).toBe(40));
+    expect(storage.store.get(FULLSCREEN_STORAGE_KEY)).toBe('0');
 
     screen.unmount();
   });

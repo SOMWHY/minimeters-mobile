@@ -7,11 +7,6 @@ import type { FrameAnalysis } from '@/features/monitoring/analysis';
 import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
 import { createAnalysisEngine } from '@/features/monitoring/engine';
 
-import {
-  STREAM_METRICS_ENABLED,
-  setAnalyzeMs,
-} from '@/features/monitoring/stream-metrics';
-
 import { appendRow } from './history';
 import { appendScopeFrame } from './scope-history';
 import { toScopeBlock } from './scope-block';
@@ -106,7 +101,6 @@ export function useLiveAnalysis(): LiveAnalysis {
         }
 
         let latest: FrameAnalysis | null = null;
-        const analyzeStartedAt = Date.now();
 
         for (const frame of frames) {
           latest = engine.push(frame);
@@ -120,10 +114,6 @@ export function useLiveAnalysis(): LiveAnalysis {
 
         if (!latest) {
           return;
-        }
-
-        if (STREAM_METRICS_ENABLED) {
-          setAnalyzeMs(Date.now() - analyzeStartedAt);
         }
 
         setMeter(latest);

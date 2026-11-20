@@ -2,11 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { parsePairingPayload, type PairingPayload } from '@/features/connection/pairing';
 import {
-  getAnalyzeMs,
-  recordStreamDrain,
-  STREAM_METRICS_ENABLED,
-} from '@/features/monitoring/stream-metrics';
-import {
   PcmSocketClient,
   type PcmConnectionState,
   type PcmSocketCredentials,
@@ -227,10 +222,6 @@ export function usePcmStream({
     lastFrameAtRef.current = Date.now();
 
     const refresh = () => {
-      // Count the backlog *before* draining: the difference between what was
-      // waiting and what we took is exactly what the caps threw away.
-      const pending = client.getPendingFrameCount();
-      const startedAt = Date.now();
       const frames = client.drainFrames();
 
       if (frames.length > 0) {
@@ -243,32 +234,6 @@ export function usePcmStream({
 
         onFramesRef.current?.(frames);
         onFrameRef.current?.(latest);
-
-        // Sampled after the callbacks: the analysis runs inside them, so
-        // measuring earlier would report a drain that never happened.
-        // TEMP probe: the first drains of a session, verbatim.
-        if (client.getReceivedFrameCount() <= 3) {
-          console.log(
-            `[stream] drain frames=${frames.length} pending=${pending} analyze=${getAnalyzeMs()}`,
-          );
-        }
-
-        if (STREAM_METRICS_ENABLED) {
-          const frameMs =
-            latest.sampleRate > 0
-              ? (latest.samplesPerChannel / latest.sampleRate) * 1000
-              : 0;
-
-          recordStreamDrain({
-            queueMs: frameMs * pending,
-            drainMs: Date.now() - startedAt,
-            frames: frames.length,
-            pending,
-            dropped: Math.max(0, pending - frames.length),
-            msgGapMs: client.getMessageGapMs(),
-            analyzeMs: getAnalyzeMs(),
-          });
-        }
 
         return;
       }

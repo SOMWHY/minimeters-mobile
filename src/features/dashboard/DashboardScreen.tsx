@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   useColorScheme,
   useWindowDimensions,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DashboardGrid,
@@ -35,9 +37,8 @@ import {
   type OrbPosition,
 } from './settings-orb';
 import { SettingsOrb } from './SettingsOrb';
-import { StreamMetricsLine } from '@/features/monitoring/StreamMetricsLine';
-import { STREAM_METRICS_ENABLED } from '@/features/monitoring/stream-metrics';
 import { useDashboardLayout } from './use-dashboard-layout';
+import { useFullscreen } from './use-fullscreen';
 import { useLiveAnalysis } from './use-live-analysis';
 
 const themeIds = Object.keys(BUILT_IN_THEMES);
@@ -98,12 +99,8 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     [height, width],
   );
   const defaultThemeId = scheme === 'dark' ? 'midnight' : 'ice';
-  const { layout, themeId, setLayout, setThemeId, resetLayout } = useDashboardLayout(
-    config,
-    storage,
-    themeIds,
-    defaultThemeId,
-  );
+  const { layout, themeId, fullscreen, setLayout, setThemeId, setFullscreen, resetLayout } =
+    useDashboardLayout(config, storage, themeIds, defaultThemeId);
 
   const rows = layout === null ? 1 : layoutRowCount(layout.items);
   /**
@@ -120,10 +117,17 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
    * the two disagree on Android (see `gridViewport`), and the disagreement is
    * exactly the dead band this fit used to leave behind.
    */
+  /**
+   * In fullscreen the status bar is hidden, so the strip it occupied is padding
+   * the user paid for and cannot see. Zeroing the inset is what actually lets
+   * the grid reach the notch; hiding the bar alone would leave the dead band.
+   */
+  const topInset = fullscreen ? 0 : insets.top;
+
   const availableHeight = gridViewport({
     measured: viewport,
     windowHeight: height,
-    insets: { top: insets.top },
+    insets: { top: topInset },
   });
   const metrics = useMemo(
     () => fitRowsToViewport({ availableHeight, rows, preset: presetMetrics }),
@@ -146,8 +150,15 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
   const orbWindow = useMemo(() => box ?? { width, height }, [box, height, width]);
   const orbInsets: OrbInsets = useMemo(
-    () => ({ top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right }),
-    [insets.bottom, insets.left, insets.right, insets.top],
+    () => ({
+      // Fullscreen pulls the clamp in to the physical edges, so the orb can be
+      // parked in a corner the system bars used to reserve.
+      top: topInset,
+      bottom: fullscreen ? 0 : insets.bottom,
+      left: insets.left,
+      right: insets.right,
+    }),
+    [fullscreen, insets.bottom, insets.left, insets.right, topInset],
   );
   const orbStorage = storage ?? AsyncStorage;
 
@@ -167,7 +178,12 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
         clampOrbPosition({
           position: stored,
           window: orbWindow,
-          insets: { top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right },
+          insets: {
+            top: topInset,
+            bottom: fullscreen ? 0 : insets.bottom,
+            left: insets.left,
+            right: insets.right,
+          },
         }),
       );
     });
@@ -175,7 +191,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     return () => {
       active = false;
     };
-  }, [insets.bottom, insets.left, insets.right, insets.top, orbStorage, orbWindow]);
+  }, [fullscreen, insets.bottom, insets.left, insets.right, orbStorage, orbWindow, topInset]);
 
   const handleOrbDragEnd = useCallback(
     (position: OrbPosition) => {
@@ -225,23 +241,18 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     }
   }, []);
 
-  const loggedGeometry = useRef(false);
-  useEffect(() => {
-    if (!__DEV__ || loggedGeometry.current || viewport === null) {
-      return;
-    }
-
-    loggedGeometry.current = true;
-    // One line per launch: shows whether the window estimate disagrees with the
-    // measured viewport on this device — the difference is the old dead band.
-    console.log('[dashboard] geometry', { window: height, measured: viewport, insets: orbInsets });
-  }, [height, orbInsets, viewport]);
+  useFullscreen(fullscreen);
 
   return (
     <ThemedView style={styles.container}>
+      <StatusBar hidden={fullscreen} />
       <View
+        testID="dashboard-screen"
         onLayout={handleBoxLayout}
-        style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}
+        style={[
+          styles.screen,
+          { paddingTop: topInset, paddingLeft: insets.left, paddingRight: insets.right },
+        ]}
       >
         <ScrollView
           testID="dashboard-scroll"
@@ -302,6 +313,19 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           </ThemedText>
         )}
 
+        <View style={styles.toggleRow}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Fullscreen
+          </ThemedText>
+          <Switch
+            testID="fullscreen-toggle"
+            accessibilityLabel="Fullscreen"
+            accessibilityRole="switch"
+            value={fullscreen}
+            onValueChange={setFullscreen}
+          />
+        </View>
+
         <View style={styles.themeRow}>
           <ThemedText type="small" themeColor="textSecondary">
             Theme
@@ -348,12 +372,6 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
       </SettingsOrb>
 
-      {STREAM_METRICS_ENABLED && (
-        <View style={styles.devOverlay} pointerEvents="none">
-          <StreamMetricsLine color="#FFFFFF" />
-        </View>
-      )}
-
       <PairingScannerOverlay
         visible={stream.isScanning}
         error={stream.scanError}
@@ -365,17 +383,6 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  devOverlay: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    zIndex: 30,
-    elevation: 30,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-  },
   container: {
     flex: 1,
   },
@@ -387,6 +394,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   themeRow: {
     gap: 6,

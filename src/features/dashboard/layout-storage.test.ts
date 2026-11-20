@@ -2,10 +2,13 @@ import type { DashboardItem, DashboardLayout, GridPlacement } from '@minimetermo
 
 import { defaultLayout, gridForWindow } from './model';
 import {
+  FULLSCREEN_STORAGE_KEY,
   LAYOUT_STORAGE_KEY,
   THEME_STORAGE_KEY,
   clearLayout,
+  loadFullscreen,
   loadTheme,
+  saveFullscreen,
   saveTheme,
   loadLayout,
   saveLayout,
@@ -234,5 +237,49 @@ describe('theme persistence', () => {
 
     await expect(loadTheme(failing, known)).resolves.toBe('midnight');
     await expect(saveTheme(failing, 'ice')).resolves.toBeUndefined();
+  });
+});
+
+describe('fullscreen preference', () => {
+  it('round-trips both states', async () => {
+    const storage = memoryStorage();
+
+    await saveFullscreen(storage, true);
+    expect(storage.store.get(FULLSCREEN_STORAGE_KEY)).toBe('1');
+    await expect(loadFullscreen(storage)).resolves.toBe(true);
+
+    await saveFullscreen(storage, false);
+    expect(storage.store.get(FULLSCREEN_STORAGE_KEY)).toBe('0');
+    await expect(loadFullscreen(storage)).resolves.toBe(false);
+  });
+
+  it('defaults to windowed when nothing is stored', async () => {
+    await expect(loadFullscreen(memoryStorage())).resolves.toBe(false);
+  });
+
+  it('treats a hand-edited payload as windowed', async () => {
+    // Anything but the literal '1' must not hide the system bars on launch.
+    for (const value of ['true', 'yes', '2', '', '{not json']) {
+      await expect(
+        loadFullscreen(memoryStorage({ [FULLSCREEN_STORAGE_KEY]: value })),
+      ).resolves.toBe(false);
+    }
+  });
+
+  it('swallows a failing disk in both directions', async () => {
+    const failing: LayoutStorageDeps = {
+      getItem: async () => {
+        throw new Error('disk on fire');
+      },
+      setItem: async () => {
+        throw new Error('disk on fire');
+      },
+      removeItem: async () => {
+        throw new Error('disk on fire');
+      },
+    };
+
+    await expect(loadFullscreen(failing)).resolves.toBe(false);
+    await expect(saveFullscreen(failing, true)).resolves.toBeUndefined();
   });
 });
