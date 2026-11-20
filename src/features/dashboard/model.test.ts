@@ -11,6 +11,7 @@ import {
   fitRowsToViewport,
   fitToConfig,
   gridForWindow,
+  gridViewport,
   layoutRowCount,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
@@ -181,6 +182,24 @@ describe('viewportHeight', () => {
     expect(viewportHeight({ windowHeight: 800, insets: { top: -10 } })).toBe(800);
     expect(viewportHeight({ windowHeight: 800, insets: { top: Number.NaN } })).toBe(800);
     expect(viewportHeight({ windowHeight: Number.NaN, insets: { top: 0 } })).toBe(0);
+  });
+});
+
+describe('gridViewport', () => {
+  it('prefers the measured viewport over the window estimate', () => {
+    // Android reports a window shorter than the laid-out view: the measured
+    // number is the truth, and fitting to the estimate is what left the band.
+    expect(gridViewport({ measured: 780, windowHeight: 900, insets: { top: 24 } })).toBe(780);
+  });
+
+  it('falls back to the estimate before the first layout pass', () => {
+    for (const measured of [null, undefined, 0, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(gridViewport({ measured, windowHeight: 900, insets: { top: 24 } })).toBe(876);
+    }
+  });
+
+  it('never goes negative through the fallback', () => {
+    expect(gridViewport({ measured: null, windowHeight: 20, insets: { top: 47 } })).toBe(0);
   });
 });
 

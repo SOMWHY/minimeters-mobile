@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Pressable,
@@ -7,6 +7,7 @@ import {
   useColorScheme,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,7 +25,7 @@ import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
 
 import { ConnectionLight } from './ConnectionLight';
-import { fitRowsToViewport, gridForWindow, layoutRowCount, viewportHeight } from './model';
+import { fitRowsToViewport, gridForWindow, gridViewport, layoutRowCount } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
 import { loadOrbPosition, saveOrbPosition } from './orb-storage';
@@ -79,6 +80,16 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
 
+  /**
+   * Height the grid may fill, in dp, as actually laid out.
+   *
+   * Measured rather than derived — see `gridViewport`. `null` until the first
+   * layout pass, which falls back to the window estimate.
+   */
+  const [viewport, setViewport] = useState<number | null>(null);
+  /** The screen's own box, measured, so the orb clamps to real bounds. */
+  const [box, setBox] = useState<{ readonly width: number; readonly height: number } | null>(null);
+
   // Columns come from the preset alone; the fitted row height needs the layout,
   // which in turn needs the columns. Resolving them in that order avoids a cycle.
   const { metrics: presetMetrics, config } = useMemo(
@@ -101,11 +112,18 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
    * padded off: the strip it used to reserve was a full-width band of
    * background the modules could never reach — most obvious in portrait, where
    * the bar sits at the bottom, and invisible in landscape, where it moves to
-   * the side. The grid now runs to the physical bottom edge and the modules
-   * draw under a transparent system bar, the way the desktop app does. The
-   * settings orb still clamps above the inset so it stays tappable.
+   * the side. The grid runs to the physical bottom edge and the modules draw
+   * under a transparent system bar, the way the desktop app does.
+   *
+   * The height comes from the measured scroll viewport, not from the window:
+   * the two disagree on Android (see `gridViewport`), and the disagreement is
+   * exactly the dead band this fit used to leave behind.
    */
-  const availableHeight = viewportHeight({ windowHeight: height, insets: { top: insets.top } });
+  const availableHeight = gridViewport({
+    measured: viewport,
+    windowHeight: height,
+    insets: { top: insets.top },
+  });
   const metrics = useMemo(
     () => fitRowsToViewport({ availableHeight, rows, preset: presetMetrics }),
     [availableHeight, presetMetrics, rows],
@@ -125,7 +143,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     BUILT_IN_THEMES[themeId as keyof typeof BUILT_IN_THEMES] ?? BUILT_IN_THEMES.midnight;
   const hidden = layout ? hiddenItems(layout.items) : [];
 
-  const orbWindow = useMemo(() => ({ width, height }), [height, width]);
+  const orbWindow = useMemo(() => box ?? { width, height }, [box, height, width]);
   const orbInsets: OrbInsets = useMemo(
     () => ({ top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right }),
     [insets.bottom, insets.left, insets.right, insets.top],
@@ -147,7 +165,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
       setOrbPosition(
         clampOrbPosition({
           position: stored,
-          window: { width, height },
+          window: orbWindow,
           insets: { top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right },
         }),
       );
@@ -156,7 +174,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     return () => {
       active = false;
     };
-  }, [height, insets.bottom, insets.left, insets.right, insets.top, orbStorage, width]);
+  }, [insets.bottom, insets.left, insets.right, insets.top, orbStorage, orbWindow]);
 
   const handleOrbDragEnd = useCallback(
     (position: OrbPosition) => {
@@ -190,13 +208,43 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
             ? `Protocol error: ${stream.protocolError}`
             : null;
 
+  const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = event.nativeEvent.layout.height;
+
+    if (Number.isFinite(next) && next > 0) {
+      setViewport(next);
+    }
+  }, []);
+
+  const handleBoxLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
+
+    if (nextWidth > 0 && nextHeight > 0) {
+      setBox({ width: nextWidth, height: nextHeight });
+    }
+  }, []);
+
+  const loggedGeometry = useRef(false);
+  useEffect(() => {
+    if (!__DEV__ || loggedGeometry.current || viewport === null) {
+      return;
+    }
+
+    loggedGeometry.current = true;
+    // One line per launch: shows whether the window estimate disagrees with the
+    // measured viewport on this device — the difference is the old dead band.
+    console.log('[dashboard] geometry', { window: height, measured: viewport, insets: orbInsets });
+  }, [height, orbInsets, viewport]);
+
   return (
     <ThemedView style={styles.container}>
       <View
+        onLayout={handleBoxLayout}
         style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}
       >
         <ScrollView
           testID="dashboard-scroll"
+          onLayout={handleViewportLayout}
           style={styles.scroll}
           contentContainerStyle={styles.content}
           scrollEnabled={!dragging}

@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -507,6 +508,71 @@ describe('DashboardScreen', () => {
 
     // The server does issue tokens, so this really is an expired code.
     expect(screen.getByText('The pairing code expired. Scan the plugin QR code again.')).toBeTruthy();
+
+    screen.unmount();
+  });
+});
+
+describe('DashboardScreen fit', () => {
+  /** Push a layout box onto a testID'd node, as the platform would. */
+  async function layoutNode(
+    screen: { getByTestId: (id: string) => unknown },
+    testID: string,
+    width: number,
+    height: number,
+  ) {
+    await act(async () => {
+      fireEvent(screen.getByTestId(testID) as never, 'layout', {
+        nativeEvent: { layout: { width, height, x: 0, y: 0 } },
+      });
+    });
+  }
+
+  /**
+   * The measured viewport is what the grid must fill.
+   *
+   * The window estimate and the laid-out scroll view disagree on Android; the
+   * difference used to be a band of background under the last row that no card
+   * could reach. The phone preset pads 12 and gaps 8 over five gaps and six
+   * rows, so a viewport of 800 leaves `(800 - 24 - 40) / 6`.
+   */
+  it('fits the grid to the measured viewport', async () => {
+    const screen = await renderScreen({ storage: memoryStorage() });
+
+    await layoutNode(screen, 'dashboard-scroll', 390, 800);
+
+    const grid = screen.getByTestId('dashboard-grid');
+    expect(StyleSheet.flatten(grid.props.style).height).toBeCloseTo(800, 0);
+
+    screen.unmount();
+  });
+
+  it('re-fits when the viewport changes, as on rotation', async () => {
+    const screen = await renderScreen({ storage: memoryStorage() });
+
+    const height = () => StyleSheet.flatten(screen.getByTestId('dashboard-grid').props.style).height;
+
+    await layoutNode(screen, 'dashboard-scroll', 390, 800);
+    expect(height()).toBeCloseTo(800, 0);
+
+    // A shorter viewport re-fits on the next layout pass, exactly.
+    await layoutNode(screen, 'dashboard-scroll', 390, 600);
+    expect(height()).toBeCloseTo(600, 0);
+
+    // Squeezing below the row floor is refused: the page scrolls instead.
+    await layoutNode(screen, 'dashboard-scroll', 390, 240);
+    expect(height()).toBeGreaterThan(240);
+
+    screen.unmount();
+  });
+
+  it('falls back to the window estimate before the first layout pass', async () => {
+    const screen = await renderScreen({ storage: memoryStorage() });
+
+    const height = StyleSheet.flatten(screen.getByTestId('dashboard-grid').props.style).height;
+
+    expect(Number.isFinite(height)).toBe(true);
+    expect(height).toBeGreaterThan(0);
 
     screen.unmount();
   });

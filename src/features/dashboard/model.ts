@@ -52,6 +52,31 @@ export function viewportHeight(options: {
   return Math.max(0, height - top);
 }
 
+/**
+ * Height the grid may fill: the measured scroll viewport when there is one.
+ *
+ * `viewportHeight` above is only a first-frame estimate. On Android the window
+ * height and the safe-area insets can disagree — the window under-reports the
+ * navigation bar while the root view still spans the whole screen — so fitting
+ * to the estimate left a band of background under the last row that no module
+ * could reach and no card could be dragged into. The measured viewport is the
+ * only number that describes what the grid actually has to fill, so it wins
+ * whenever it exists; rotation and inset changes re-measure, which re-fits.
+ */
+export function gridViewport(options: {
+  readonly measured?: number | null;
+  readonly windowHeight: number;
+  readonly insets: { readonly top: number };
+}): number {
+  const measured = options.measured;
+
+  if (typeof measured === 'number' && Number.isFinite(measured) && measured > 0) {
+    return measured;
+  }
+
+  return viewportHeight({ windowHeight: options.windowHeight, insets: options.insets });
+}
+
 /** Rows the layout currently occupies (`max(row + rowSpan)`), at least one. */
 export function layoutRowCount(items: readonly DashboardItem[]): number {
   let rows = 0;
