@@ -1,0 +1,199 @@
+import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import type { VisualizationTheme } from '@minimetermobile/ui';
+
+import {
+  clampOrbPosition,
+  ORB_SIZE,
+  panelSide,
+  type OrbInsets,
+  type OrbPosition,
+  type OrbWindow,
+} from './settings-orb';
+
+export type SettingsOrbProps = {
+  readonly theme: VisualizationTheme;
+  readonly window: OrbWindow;
+  readonly insets: OrbInsets;
+  /** Where the orb starts; later drags are owned here and reported upward. */
+  readonly initialPosition: OrbPosition;
+  /** Called once per drag, on release, so storage is not written per frame. */
+  readonly onDragEnd: (position: OrbPosition) => void;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  /** Panel body, rendered only while open. */
+  readonly children: ReactNode;
+};
+
+type GestureEvent = {
+  readonly nativeEvent?: { readonly pageX?: number; readonly pageY?: number };
+};
+
+function pointerOf(event: GestureEvent): { x: number; y: number } {
+  const native = event.nativeEvent ?? {};
+
+  return { x: native.pageX ?? 0, y: native.pageY ?? 0 };
+}
+
+/**
+ * The only always-visible control on the dashboard.
+ *
+ * Tapping it opens the settings card; dragging it moves it out of the way and
+ * the position survives a relaunch. Replaces the fixed bottom bar so the grid
+ * can use the whole screen.
+ */
+export function SettingsOrb({
+  theme,
+  window,
+  insets,
+  initialPosition,
+  onDragEnd,
+  open,
+  onToggle,
+  children,
+}: SettingsOrbProps) {
+  const [position, setPosition] = useState(initialPosition);
+  /** Where the finger landed when the drag began; `null` between gestures. */
+  const [start, setStart] = useState<{
+    readonly x: number;
+    readonly y: number;
+    readonly pageX: number;
+    readonly pageY: number;
+  } | null>(null);
+
+  // A rotation or a restored position can leave the orb outside the new window.
+  // Derived rather than stored so no effect has to write state back.
+  const placed = clampOrbPosition({ position, window, insets });
+
+  /**
+   * Raw responder props instead of `PanResponder`.
+   *
+   * The orb needs no gesture algebra — a press on the child `Pressable` opens the
+   * panel, and a move claims the touch for the drag — and the plain callbacks
+   * keep the whole component free of refs.
+   */
+  const responders = {
+    onStartShouldSetResponder: () => false,
+    onMoveShouldSetResponder: () => true,
+    onResponderGrant: (event: GestureEvent) => {
+      const pointer = pointerOf(event);
+
+      setStart({ x: placed.x, y: placed.y, pageX: pointer.x, pageY: pointer.y });
+    },
+    onResponderMove: (event: GestureEvent) => {
+      if (start === null) {
+        return;
+      }
+
+      const pointer = pointerOf(event);
+
+      setPosition(
+        clampOrbPosition({
+          position: {
+            x: start.x + pointer.x - start.pageX,
+            y: start.y + pointer.y - start.pageY,
+          },
+          window,
+          insets,
+        }),
+      );
+    },
+    onResponderRelease: () => {
+      if (start === null) {
+        return;
+      }
+
+      setStart(null);
+      onDragEnd(placed);
+    },
+    onResponderTerminate: () => setStart(null),
+  };
+
+  const side = panelSide(placed, window);
+
+  return (
+    <View
+      style={[styles.root, { left: placed.x, top: placed.y }]}
+      pointerEvents="box-none"
+    >
+      {open && (
+        <View
+          testID="settings-panel"
+          style={[
+            styles.panel,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.axis,
+              maxWidth: Math.max(0, window.width - 24),
+              ...(side.vertical === 'above'
+                ? { bottom: ORB_SIZE + 8 }
+                : { top: ORB_SIZE + 8 }),
+              ...(side.horizontal === 'left' ? { right: 0 } : { left: 0 }),
+            },
+          ]}
+        >
+          {children}
+        </View>
+      )}
+
+      <View {...responders} style={styles.orbHost}>
+        <Pressable
+          testID="settings-orb"
+          accessibilityRole="button"
+          accessibilityLabel="Dashboard settings"
+          accessibilityState={{ expanded: open }}
+          onPress={onToggle}
+          style={[
+            styles.orb,
+            { backgroundColor: theme.colors.surface, borderColor: theme.colors.accent },
+          ]}
+        >
+          <View style={[styles.orbDot, { backgroundColor: theme.colors.accent }]} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    position: 'absolute',
+    width: ORB_SIZE,
+    height: ORB_SIZE,
+    zIndex: 20,
+    elevation: 20,
+  },
+  orbHost: {
+    width: ORB_SIZE,
+    height: ORB_SIZE,
+  },
+  orb: {
+    width: ORB_SIZE,
+    height: ORB_SIZE,
+    borderRadius: ORB_SIZE / 2,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.92,
+  },
+  orbDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    opacity: 0.9,
+  },
+  panel: {
+    position: 'absolute',
+    width: 280,
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 12,
+  },
+});

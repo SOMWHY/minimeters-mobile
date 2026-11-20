@@ -1,6 +1,7 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { THEME_STORAGE_KEY } from './layout-storage';
 import { INDICATOR_COLORS } from './connection-indicator';
@@ -60,12 +61,29 @@ function makeStereoFrame(): ArrayBuffer {
   return buffer;
 }
 
+const SAFE_AREA_METRICS = {
+  frame: { x: 0, y: 0, width: 390, height: 844 },
+  insets: { top: 0, bottom: 0, left: 0, right: 0 },
+};
+
 function renderScreen(props: { socketFactory?: SocketFactory; storage?: LayoutStorageDeps }) {
   return render(
-    <PcmConnectionProvider socketFactory={props.socketFactory}>
-      <DashboardScreen storage={props.storage} />
-    </PcmConnectionProvider>,
+    <SafeAreaProvider initialMetrics={SAFE_AREA_METRICS}>
+      <PcmConnectionProvider socketFactory={props.socketFactory}>
+        <DashboardScreen storage={props.storage} />
+      </PcmConnectionProvider>
+    </SafeAreaProvider>,
   );
+}
+
+/**
+ * The settings orb replaced the pinned bar: every control is behind a tap on it.
+ *
+ * Tap and drag share the orb — the drag only claims the responder once the
+ * finger travels — so a plain press is enough to open the panel.
+ */
+async function openSettingsPanel(screen: { getByTestId: (id: string) => unknown }) {
+  await fireEvent.press(screen.getByTestId('settings-orb') as never);
 }
 
 async function layoutGrid(screen: { getByTestId: (id: string) => unknown }) {
@@ -141,6 +159,7 @@ describe('DashboardScreen', () => {
     });
     const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
       data: JSON.stringify(pcmPairing),
@@ -197,9 +216,12 @@ describe('DashboardScreen', () => {
     const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
     await act(async () => {});
 
-    // No scan: the stored pairing drives the connection.
+    // No scan: the stored pairing drives the connection. The panel shows the
+    // paired controls instead of the scan button.
     expect(socketFactory).toHaveBeenCalledWith('ws://192.168.1.20:8422/ws', expect.any(Object));
+    await openSettingsPanel(screen);
     expect(screen.queryByText('Scan plugin QR code')).toBeNull();
+    expect(screen.getByText('Disconnect')).toBeTruthy();
 
     if (!socketHandlers) {
       throw new Error('Expected the socket factory to capture handlers');
@@ -235,6 +257,7 @@ describe('DashboardScreen', () => {
   it('reports an invalid pairing code and keeps the scanner open', async () => {
     const screen = await renderScreen({ storage: memoryStorage() });
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
       data: 'not a pairing code',
@@ -251,6 +274,7 @@ describe('DashboardScreen', () => {
     const screen = await renderScreen({ storage });
     await act(async () => {});
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Ember'));
     await act(async () => {});
 
@@ -283,6 +307,7 @@ describe('DashboardScreen', () => {
   it('mounts the scanner in a full-screen overlay with scrolling available', async () => {
     const screen = await renderScreen({ storage: memoryStorage() });
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
 
     expect(screen.getByTestId('pairing-scanner-overlay')).toBeTruthy();
@@ -296,7 +321,7 @@ describe('DashboardScreen', () => {
     screen.unmount();
   });
 
-  it('keeps edit controls and the hidden tray in the pinned bar while editing', async () => {
+  it('keeps the edit controls and the hidden tray in the settings panel', async () => {
     const storage = memoryStorage();
     storage.store.set(
       'minimeters.dashboard.layout.v1',
@@ -316,6 +341,7 @@ describe('DashboardScreen', () => {
     const screen = await renderScreen({ storage });
     await act(async () => {});
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
       data: JSON.stringify(pcmPairing),
@@ -326,10 +352,10 @@ describe('DashboardScreen', () => {
     // Editing keeps the page scrollable — a long grid has to be reachable — while
     // a card drag freezes it for the duration of the gesture.
     expect(screen.getByTestId('dashboard-scroll').props.scrollEnabled).toBe(true);
-    expect(screen.getByTestId('pinned-bar')).toContainElement(
+    expect(screen.getByTestId('settings-panel')).toContainElement(
       screen.getByText('Reset layout'),
     );
-    expect(screen.getByTestId('pinned-bar')).toContainElement(
+    expect(screen.getByTestId('settings-panel')).toContainElement(
       screen.getByTestId('hidden-tray'),
     );
     expect(screen.getByText('Done')).toBeTruthy();
@@ -345,6 +371,7 @@ describe('DashboardScreen', () => {
     });
     const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
       data: JSON.stringify(pcmPairing),
@@ -377,6 +404,7 @@ describe('DashboardScreen', () => {
     });
     const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
       data: JSON.stringify(pcmPairing),
@@ -408,6 +436,7 @@ describe('DashboardScreen', () => {
     });
     const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
       data: JSON.stringify(pcmPairing),
@@ -453,6 +482,7 @@ describe('DashboardScreen', () => {
     });
     const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
 
+    await openSettingsPanel(screen);
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
       data: JSON.stringify(pcmPairing),

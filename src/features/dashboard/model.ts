@@ -20,24 +20,81 @@ import {
 export const DASHBOARD_SHORT_SIDE_THRESHOLD = 600;
 
 /**
+ * Vertical limits for the fitted row height, in dp.
+ *
+ * The floor keeps a card legible when the layout has more rows than the screen;
+ * the ceiling stops two lonely cards from becoming billboards.
+ */
+export const MIN_ROW_HEIGHT = 56;
+export const MAX_ROW_HEIGHT = 200;
+
+/** Rows the layout currently occupies (`max(row + rowSpan)`), at least one. */
+export function layoutRowCount(items: readonly DashboardItem[]): number {
+  let rows = 0;
+
+  for (const item of items) {
+    if (item.visible) {
+      rows = Math.max(rows, item.placement.row + item.placement.rowSpan);
+    }
+  }
+
+  return Math.max(1, rows);
+}
+
+/**
+ * Stretch the row height so `rows` rows exactly fill `availableHeight`.
+ *
+ * The dashboard should read as one full screen of instruments, not a grid with
+ * dead space under it. Solving for the row height (rather than scaling the
+ * whole grid) keeps drag/resize stepping in whole cells. When even the floor
+ * cannot fit, the grid is simply taller than the viewport and the page scrolls.
+ */
+export function fitRowsToViewport(options: {
+  readonly availableHeight: number;
+  readonly rows: number;
+  readonly preset: GridMetrics;
+}): GridMetrics {
+  const rows = Math.max(1, Math.floor(options.rows) || 1);
+  const { padding, gap } = options.preset;
+  const usable = options.availableHeight - padding * 2 - gap * (rows - 1);
+  const fitted = Number.isFinite(usable) ? usable / rows : MIN_ROW_HEIGHT;
+  const clamped = Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, fitted));
+
+  return { ...options.preset, rowHeight: Math.round(clamped * 10) / 10 };
+}
+
+/**
  * Grid geometry for the current window.
  *
  * `config.columns` must follow the preset: the library measures one column from
  * `config.columns` and reads row height from `metrics`, so the two disagreeing
  * would misplace every card.
+ *
+ * When `availableHeight` and `rows` are supplied the row height is fitted to the
+ * viewport; without them the preset's fixed row height is returned.
  */
 export function gridForWindow(window: {
   readonly width: number;
   readonly height: number;
+  readonly availableHeight?: number;
+  readonly rows?: number;
 }): { metrics: GridMetrics; config: GridConfig } {
   const shortSide = Math.min(
     Math.abs(window.width),
     Math.abs(window.height),
   );
-  const metrics =
+  const preset =
     shortSide >= DASHBOARD_SHORT_SIDE_THRESHOLD
       ? GRID_PRESETS.tablet
       : GRID_PRESETS.phone;
+  const metrics =
+    window.availableHeight === undefined || window.rows === undefined
+      ? preset
+      : fitRowsToViewport({
+          availableHeight: window.availableHeight,
+          rows: window.rows,
+          preset,
+        });
 
   return {
     metrics,

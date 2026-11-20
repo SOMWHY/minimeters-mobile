@@ -121,6 +121,29 @@ function binEdges(fftBins: number): number[] {
 const FFT_BINS = ANALYSIS_FFT_SIZE >> 1;
 const EDGES = binEdges(FFT_BINS);
 
+/**
+ * Frequency span of one display bin, in Hz.
+ *
+ * The readout needs to turn a bin index back into a frequency; the mapping has
+ * to be the same log curve the spectrum is drawn on, which only `EDGES` knows.
+ * `low`/`high` are the FFT bins the display bin pools, `center` is the geometric
+ * middle of that slice — what a cursor on the spectrum should report.
+ */
+export function binFrequencyRange(
+  binIndex: number,
+  sampleRate: number,
+): { low: number; high: number; center: number } {
+  const index = Math.min(
+    ANALYSIS_BIN_COUNT - 1,
+    Math.max(0, Math.floor(binIndex) || 0),
+  );
+  const hzPerFftBin = sampleRate / ANALYSIS_FFT_SIZE;
+  const low = EDGES[index] * hzPerFftBin;
+  const high = EDGES[index + 1] * hzPerFftBin;
+
+  return { low, high, center: (low + high) / 2 };
+}
+
 /** Map one channel's tail onto the display bins, max-pooled so tones never vanish. */
 function spectrumOf(samples: Float32Array): Float64Array {
   const windowed = new Float32Array(ANALYSIS_FFT_SIZE);

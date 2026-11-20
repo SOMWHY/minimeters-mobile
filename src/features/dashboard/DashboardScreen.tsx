@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Pressable,
@@ -8,7 +8,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DashboardGrid,
   ModuleTray,
@@ -23,9 +24,17 @@ import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
 
 import { ConnectionLight } from './ConnectionLight';
-import { gridForWindow } from './model';
+import { fitRowsToViewport, gridForWindow, layoutRowCount } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
+import { loadOrbPosition, saveOrbPosition } from './orb-storage';
+import {
+  clampOrbPosition,
+  defaultOrbPosition,
+  type OrbInsets,
+  type OrbPosition,
+} from './settings-orb';
+import { SettingsOrb } from './SettingsOrb';
 import { useDashboardLayout } from './use-dashboard-layout';
 import { useLiveAnalysis } from './use-live-analysis';
 
@@ -55,21 +64,40 @@ export type DashboardScreenProps = {
   storage?: LayoutStorageDeps;
 };
 
+/**
+ * The instruments, edge to edge.
+ *
+ * There is no chrome around the grid any more: the row height is fitted to the
+ * viewport so the modules fill the screen, and everything that used to live in
+ * the bottom bar moved into the floating settings orb.
+ */
 export function DashboardScreen({ storage }: DashboardScreenProps) {
   const stream = usePcmConnection();
   const { analysis, history, scopeFrames } = useLiveAnalysis();
 
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
 
-  const grid = useMemo(() => gridForWindow({ width, height }), [height, width]);
-  const { config, metrics } = grid;
+  // Columns come from the preset alone; the fitted row height needs the layout,
+  // which in turn needs the columns. Resolving them in that order avoids a cycle.
+  const { metrics: presetMetrics, config } = useMemo(
+    () => gridForWindow({ width, height }),
+    [height, width],
+  );
   const defaultThemeId = scheme === 'dark' ? 'midnight' : 'ice';
   const { layout, themeId, setLayout, setThemeId, resetLayout } = useDashboardLayout(
     config,
     storage,
     themeIds,
     defaultThemeId,
+  );
+
+  const rows = layout === null ? 1 : layoutRowCount(layout.items);
+  const availableHeight = Math.max(0, height - insets.top - insets.bottom);
+  const metrics = useMemo(
+    () => fitRowsToViewport({ availableHeight, rows, preset: presetMetrics }),
+    [availableHeight, presetMetrics, rows],
   );
 
   const [editing, setEditing] = useState(false);
@@ -85,6 +113,49 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   const theme: VisualizationTheme =
     BUILT_IN_THEMES[themeId as keyof typeof BUILT_IN_THEMES] ?? BUILT_IN_THEMES.midnight;
   const hidden = layout ? hiddenItems(layout.items) : [];
+
+  const orbWindow = useMemo(() => ({ width, height }), [height, width]);
+  const orbInsets: OrbInsets = useMemo(
+    () => ({ top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right }),
+    [insets.bottom, insets.left, insets.right, insets.top],
+  );
+  const orbStorage = storage ?? AsyncStorage;
+
+  const [orbPosition, setOrbPosition] = useState<OrbPosition>(() =>
+    defaultOrbPosition({ window: { width, height }, insets: orbInsets }),
+  );
+  const [panelOpen, setPanelOpen] = useState(false);
+  useEffect(() => {
+    let active = true;
+
+    void loadOrbPosition(orbStorage).then((stored) => {
+      if (!active || stored === null) {
+        return;
+      }
+
+      setOrbPosition(
+        clampOrbPosition({
+          position: stored,
+          window: { width, height },
+          insets: { top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right },
+        }),
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [height, insets.bottom, insets.left, insets.right, insets.top, orbStorage, width]);
+
+  const handleOrbDragEnd = useCallback(
+    (position: OrbPosition) => {
+      setOrbPosition(position);
+      void saveOrbPosition(orbStorage, position);
+    },
+    [orbStorage],
+  );
+
+  const togglePanel = useCallback(() => setPanelOpen((current) => !current), []);
 
   const handleRestore = (id: string) => {
     if (!layout) {
@@ -117,39 +188,6 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           contentContainerStyle={styles.content}
           scrollEnabled={!dragging}
         >
-          <View style={styles.toolbar}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Theme
-            </ThemedText>
-            <View style={styles.themeChips}>
-              {themeIds.map((id) => {
-                const selected = id === themeId;
-
-                return (
-                  <Pressable
-                    key={id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => setThemeId(id)}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                  >
-                    <ThemedText type="small" themeColor={selected ? 'text' : 'textSecondary'}>
-                      {BUILT_IN_THEMES[id as keyof typeof BUILT_IN_THEMES].name}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <View style={styles.toolbarSpacer} />
-            <ConnectionLight
-              status={stream.status}
-              reauthRequired={stream.reauthRequired}
-              fatalError={stream.fatalError}
-              connectionError={stream.connectionError}
-              protocolError={stream.protocolError}
-            />
-          </View>
-
           {layout === null ? (
             <ThemedText type="small">Loading dashboard…</ThemedText>
           ) : (
@@ -171,59 +209,94 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
                   analysis={analysis}
                   history={history}
                   scopeFrames={scopeFrames}
+                  editing={editing}
                 />
               )}
             />
           )}
         </ScrollView>
+      </SafeAreaView>
 
-        {/*
-          Everything the user needs while editing lives here, outside the scroll
-          view: the page scrolls while editing, but a drag freezes it, so controls
-          placed at the end of the content could end up unreachable mid-gesture.
-        */}
-        <View style={styles.pinnedBar} testID="pinned-bar">
-          {banner !== null && (
-            <ThemedText type="small" accessibilityRole="alert" testID="connection-banner">
-              {banner}
-            </ThemedText>
-          )}
+      <View
+        testID="connection-light-host"
+        pointerEvents="none"
+        style={[styles.lightHost, { top: insets.top + 8 }]}
+      >
+        <ConnectionLight
+          status={stream.status}
+          reauthRequired={stream.reauthRequired}
+          fatalError={stream.fatalError}
+          connectionError={stream.connectionError}
+          protocolError={stream.protocolError}
+        />
+      </View>
 
-          {editing && hidden.length > 0 && (
-            <ScrollView
-              testID="hidden-tray"
-              style={styles.tray}
-              nestedScrollEnabled
-            >
-              <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
-            </ScrollView>
-          )}
+      <SettingsOrb
+        theme={theme}
+        window={orbWindow}
+        insets={orbInsets}
+        initialPosition={orbPosition}
+        onDragEnd={handleOrbDragEnd}
+        open={panelOpen}
+        onToggle={togglePanel}
+      >
+        {banner !== null && (
+          <ThemedText type="small" accessibilityRole="alert" testID="connection-banner">
+            {banner}
+          </ThemedText>
+        )}
 
-          {!stream.isPaired && (
-            <Button title="Scan plugin QR code" onPress={stream.startScan} />
-          )}
+        <View style={styles.themeRow}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Theme
+          </ThemedText>
+          <View style={styles.themeChips}>
+            {themeIds.map((id) => {
+              const selected = id === themeId;
 
-          {stream.isPaired && (
-            <>
-              <View style={styles.pinnedRow}>
-                <Button
-                  title={editing ? 'Done' : 'Edit layout'}
-                  onPress={() => setEditing((current) => !current)}
-                />
-                {editing && <Button title="Reset layout" onPress={resetLayout} />}
-              </View>
-              <Button title="Disconnect" onPress={stream.disconnect} />
-            </>
-          )}
+              return (
+                <Pressable
+                  key={id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => setThemeId(id)}
+                  style={[styles.chip, selected && styles.chipSelected]}
+                >
+                  <ThemedText type="small" themeColor={selected ? 'text' : 'textSecondary'}>
+                    {BUILT_IN_THEMES[id as keyof typeof BUILT_IN_THEMES].name}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
-        <PairingScannerOverlay
-          visible={stream.isScanning}
-          error={stream.scanError}
-          onQrScanned={stream.handleQrScanned}
-          onCancel={stream.cancelScan}
-        />
-      </SafeAreaView>
+        {!stream.isPaired && <Button title="Scan plugin QR code" onPress={stream.startScan} />}
+
+        {stream.isPaired && (
+          <>
+            <Button
+              title={editing ? 'Done' : 'Edit layout'}
+              onPress={() => setEditing((current) => !current)}
+            />
+            {editing && <Button title="Reset layout" onPress={resetLayout} />}
+            <Button title="Disconnect" onPress={stream.disconnect} />
+          </>
+        )}
+
+        {editing && hidden.length > 0 && (
+          <ScrollView testID="hidden-tray" style={styles.tray} nestedScrollEnabled>
+            <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
+          </ScrollView>
+        )}
+      </SettingsOrb>
+
+      <PairingScannerOverlay
+        visible={stream.isScanning}
+        error={stream.scanError}
+        onQrScanned={stream.handleQrScanned}
+        onCancel={stream.cancelScan}
+      />
     </ThemedView>
   );
 }
@@ -238,17 +311,22 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
-  toolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  content: {
+    flexGrow: 1,
+  },
+  lightHost: {
+    position: 'absolute',
+    left: 12,
+    width: 12,
+    height: 12,
+    zIndex: 10,
+  },
+  themeRow: {
+    gap: 6,
   },
   themeChips: {
     flexDirection: 'row',
     gap: 8,
-  },
-  toolbarSpacer: {
-    flex: 1,
   },
   chip: {
     paddingVertical: 6,
@@ -260,27 +338,7 @@ const styles = StyleSheet.create({
   chipSelected: {
     backgroundColor: 'rgba(128,128,128,0.25)',
   },
-  content: {
-    width: '100%',
-    maxWidth: 900,
-    alignSelf: 'center',
-    padding: 16,
-    gap: 16,
-  },
   tray: {
-    maxHeight: 180,
-  },
-  pinnedBar: {
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    width: '100%',
-    maxWidth: 900,
-    alignSelf: 'center',
-  },
-  pinnedRow: {
-    flexDirection: 'row',
-    gap: 12,
+    maxHeight: 140,
   },
 });

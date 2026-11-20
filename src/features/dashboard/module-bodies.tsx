@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { ReactElement } from 'react';
+import { StyleSheet, View } from 'react-native';
 import {
   LoudnessModule,
   OscilloscopeModule,
@@ -16,9 +17,22 @@ import {
 
 import type { FrameAnalysis } from '@/features/monitoring/analysis';
 import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
+import { STREAM_REFRESH_MS } from '@/features/monitoring/use-pcm-stream';
 
+import { Crosshair } from './Crosshair';
 import { SPECTROGRAM_HISTORY_ROWS } from './history';
 import { toScopeBlock } from './scope-block';
+import {
+  formatDb,
+  formatHz,
+  formatNote,
+  formatSeconds,
+  spectrumReadout,
+  spectrogramReadout,
+  waveformReadout,
+  WAVEFORM_COLUMNS,
+  DEFAULT_SAMPLE_RATE,
+} from './readout';
 import {
   LOUDNESS_BAR_DB_RANGE,
   loudnessValues,
@@ -36,6 +50,11 @@ export type ModuleBodyProps = {
   readonly history: readonly Float32Array[];
   /** Recent auto-gained blocks, oldest first — the waveform's picture of the past. */
   readonly scopeFrames: readonly PcmBlock[];
+  /**
+   * Edit mode suppresses the double-tap cursor: the card's hold-then-drag owns
+   * touch there.
+   */
+  readonly editing?: boolean;
 };
 
 /**
@@ -54,26 +73,52 @@ function ModuleBodyBase({
   analysis,
   history,
   scopeFrames,
+  editing = false,
 }: ModuleBodyProps): ReactElement {
   const height = rect.height;
   const block = toScopeBlock(frame, analysis);
+  const sampleRate = frame?.sampleRate ?? DEFAULT_SAMPLE_RATE;
+
+  let content: ReactElement;
+  let cursor: ReactElement | null = null;
 
   switch (item.kind) {
     case 'waveform':
-      return (
+      content = (
         <WaveformModule
           theme={theme}
           frames={scopeFrames.length > 0 ? scopeFrames : null}
           block={block}
+          columns={WAVEFORM_COLUMNS}
           height={height}
         />
       );
+      if (!editing) {
+        cursor = (
+          <Crosshair
+            kind="waveform"
+            theme={theme}
+            readout={(point) => {
+              const reading = waveformReadout({
+                frames: scopeFrames,
+                columns: WAVEFORM_COLUMNS,
+                fraction: point.x,
+              });
+
+              return reading === null ? null : formatDb(reading.db);
+            }}
+          />
+        );
+      }
+      break;
     case 'oscilloscope':
-      return <OscilloscopeModule theme={theme} block={block} height={height} />;
+      content = <OscilloscopeModule theme={theme} block={block} height={height} />;
+      break;
     case 'vectorscope':
-      return <VectorscopeModule theme={theme} block={block} height={height} />;
+      content = <VectorscopeModule theme={theme} block={block} height={height} />;
+      break;
     case 'spectrum':
-      return (
+      content = (
         <SpectrumModule
           theme={theme}
           bins={analysis?.bins ?? null}
@@ -81,10 +126,41 @@ function ModuleBodyBase({
           height={height}
         />
       );
+      if (!editing) {
+        cursor = (
+          <Crosshair
+            kind="spectrum"
+            theme={theme}
+            readout={(point) => {
+              if (analysis === null) {
+                return null;
+              }
+
+              const reading = spectrumReadout({
+                bins: analysis.bins,
+                fraction: point.x,
+                sampleRate,
+              });
+
+              if (reading === null) {
+                return null;
+              }
+
+              const note = reading.note === null ? null : formatNote(reading.note);
+
+              return [formatDb(reading.db), formatHz(reading.hz), note]
+                .filter((part): part is string => part !== null)
+                .join(' | ');
+            }}
+          />
+        );
+      }
+      break;
     case 'vu':
-      return <VuModule theme={theme} data={analysis ? vuLevels(analysis) : null} height={height} />;
+      content = <VuModule theme={theme} data={analysis ? vuLevels(analysis) : null} height={height} />;
+      break;
     case 'loudness':
-      return (
+      content = (
         <LoudnessModule
           theme={theme}
           data={analysis ? loudnessValues(analysis) : null}
@@ -92,8 +168,9 @@ function ModuleBodyBase({
           height={height}
         />
       );
+      break;
     case 'spectrogram':
-      return (
+      content = (
         <SpectrogramModule
           theme={theme}
           rows={history.length > 0 ? history : null}
@@ -101,8 +178,54 @@ function ModuleBodyBase({
           height={height}
         />
       );
+      if (!editing) {
+        cursor = (
+          <Crosshair
+            kind="spectrogram"
+            theme={theme}
+            readout={(point) => {
+              const reading = spectrogramReadout({
+                rows: history,
+                fractionX: point.x,
+                fractionY: point.y,
+                sampleRate,
+                refreshMs: STREAM_REFRESH_MS,
+              });
+
+              if (reading === null) {
+                return null;
+              }
+
+              const note = reading.note === null ? null : formatNote(reading.note);
+
+              return [
+                formatDb(reading.db),
+                formatHz(reading.hz),
+                note,
+                formatSeconds(reading.secondsAgo),
+              ]
+                .filter((part): part is string => part !== null)
+                .join(' | ');
+            }}
+          />
+        );
+      }
+      break;
   }
+
+  return (
+    <View style={styles.body}>
+      {content}
+      {cursor}
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  body: {
+    flex: 1,
+  },
+});
 
 /**
  * Memoised so a 10 Hz frame stream does not re-render every module for changes
