@@ -8,6 +8,7 @@
  */
 
 import { analyseFrame, type FrameAnalysis } from './analysis';
+import { createAutoGain } from './auto-gain';
 import { createVuMeter, DEFAULT_BALLISTICS, type BallisticsConfig } from './ballistics';
 import { createLoudnessMeter } from './loudness';
 import type { PcmAudioFrame } from './pcm-frame';
@@ -30,11 +31,13 @@ export function createAnalysisEngine(config: BallisticsConfig = DEFAULT_BALLISTI
   let sampleRate = 0;
   let loudness = createLoudnessMeter(sampleRate);
   let vu = createVuMeter(config);
+  let autoGain = createAutoGain();
 
   function reset(): void {
     sampleRate = 0;
     loudness = createLoudnessMeter(0);
     vu = createVuMeter(config);
+    autoGain = createAutoGain();
   }
 
   function push(frame: PcmAudioFrame): FrameAnalysis {
@@ -49,7 +52,8 @@ export function createAnalysisEngine(config: BallisticsConfig = DEFAULT_BALLISTI
     // loudness — feeding it twice would add a phantom +3 dB.
     loudness.push(frame.channels >= 2 ? [base.left, base.right] : [base.left]);
 
-    const levels = vu.push(base.levels, frameDurationMs(frame));
+    const durationMs = frameDurationMs(frame);
+    const levels = vu.push(base.levels, durationMs);
 
     return {
       ...base,
@@ -57,6 +61,8 @@ export function createAnalysisEngine(config: BallisticsConfig = DEFAULT_BALLISTI
       lufs: loudness.integrated(),
       momentaryLufs: loudness.value(),
       shortTermLufs: loudness.shortTerm(),
+      // Display gain touches the scopes only; every meter above read the raw frame.
+      displaySamples: autoGain.apply(frame.samples, durationMs),
     };
   }
 

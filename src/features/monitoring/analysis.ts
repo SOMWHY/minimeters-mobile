@@ -41,6 +41,13 @@ export interface FrameAnalysis {
   readonly bins: Float32Array;
   /** Same data normalised to 0..1 over the display range, for the spectrogram. */
   readonly spectrogramRow: Float32Array;
+  /**
+   * Interleaved samples with the *display* gain applied, for the scopes only.
+   * `analyseFrame` leaves this identical to `samples`; the engine replaces it
+   * with an auto-gained copy so a quiet trace still fills its card. Metering
+   * (levels, LUFS, bins) always reads the untouched samples.
+   */
+  readonly displaySamples: Float32Array;
 }
 
 const HANN = hannWindow(ANALYSIS_FFT_SIZE);
@@ -202,6 +209,9 @@ export function analyseFrame(frame: PcmAudioFrame): FrameAnalysis {
     right,
     bins,
     spectrogramRow,
+    // The engine overwrites this with the auto-gained copy; on its own the
+    // analysis has no cross-frame state, so the trace is shown as recorded.
+    displaySamples: frame.samples,
   };
 }
 
@@ -224,5 +234,6 @@ export function silentAnalysis(): FrameAnalysis {
     right: new Float32Array(0),
     bins: SILENT_BINS,
     spectrogramRow: new Float32Array(ANALYSIS_BIN_COUNT),
+    displaySamples: new Float32Array(0),
   };
 }

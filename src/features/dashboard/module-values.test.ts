@@ -36,6 +36,7 @@ function analysisOf({
     right: new Float32Array(0),
     bins: new Float32Array(0),
     spectrogramRow: new Float32Array(0),
+    displaySamples: new Float32Array(0),
   };
 }
 

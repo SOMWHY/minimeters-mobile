@@ -37,6 +37,28 @@ function toBlock(frame: PcmAudioFrame | null): PcmBlock | null {
   };
 }
 
+/**
+ * The scopes draw a linear picture of the samples, which at a normal listening
+ * level is a nearly flat line. They get the auto-gained copy instead; the meters
+ * (VU, loudness, spectrum) keep reading the untouched frame above.
+ */
+function toScopeBlock(
+  frame: PcmAudioFrame | null,
+  analysis: FrameAnalysis | null,
+): PcmBlock | null {
+  if (!frame) {
+    return null;
+  }
+
+  const samples = analysis?.displaySamples;
+
+  if (!samples || samples.length !== frame.samples.length) {
+    return toBlock(frame);
+  }
+
+  return { samples, channels: frame.channels, samplesPerChannel: frame.samplesPerChannel };
+}
+
 export type ModuleBodyProps = {
   readonly item: DashboardItem;
   readonly rect: CellRect;
@@ -64,7 +86,7 @@ function ModuleBodyBase({
   history,
 }: ModuleBodyProps): ReactElement {
   const height = rect.height;
-  const block = toBlock(frame);
+  const block = toScopeBlock(frame, analysis);
 
   switch (item.kind) {
     case 'waveform':

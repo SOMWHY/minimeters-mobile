@@ -98,6 +98,27 @@ describe('createAnalysisEngine', () => {
     expect(analysis.left[0]).toBeCloseTo(frame.samples[0], 6);
   });
 
+  it('lifts the scope trace without touching the meters', () => {
+    const engine = createAnalysisEngine();
+    let analysis = engine.push(frameOf({ amplitude: 0.1 }));
+
+    for (let index = 0; index < 200; index += 1) {
+      analysis = engine.push(frameOf({ amplitude: 0.1 }));
+    }
+
+    const displayPeak = Math.max(...analysis.displaySamples.map(Math.abs));
+    const rawPeak = analysis.levels[0].peak;
+
+    // -20 dBFS drawn at 10% height is the complaint this fixes.
+    expect(rawPeak).toBeLessThan(0.15);
+    expect(displayPeak).toBeGreaterThan(0.7);
+    expect(displayPeak).toBeLessThanOrEqual(1);
+
+    // Metering is unchanged by the display gain.
+    expect(analysis.levels[0].peak).toBeCloseTo(0.1, 3);
+    expect(analysis.lufs).toBeLessThan(-10);
+  });
+
   it('restarts its meters when the sample rate changes', () => {
     const engine = createAnalysisEngine();
 
