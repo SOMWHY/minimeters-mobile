@@ -38,7 +38,6 @@ import {
   loudnessReadout,
   loudnessValues,
   SPECTRUM_DB_RANGE,
-  spectrumBins,
   vuLevels,
 } from './module-values';
 
@@ -123,7 +122,7 @@ function ModuleBodyBase({
       content = (
         <SpectrumModule
           theme={theme}
-          bins={spectrumBins(analysis)}
+          bins={analysis?.bins ?? null}
           dbRange={SPECTRUM_DB_RANGE}
           height={height}
         />

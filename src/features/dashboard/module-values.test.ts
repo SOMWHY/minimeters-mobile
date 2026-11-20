@@ -8,7 +8,6 @@ import {
   loudnessReadout,
   loudnessValues,
   SPECTRUM_DB_RANGE,
-  spectrumBins,
   toBarFraction,
   VU_BAR_DB_RANGE,
   vuLevels,
@@ -63,19 +62,11 @@ describe('linearToDb', () => {
     expect(toBarFraction(linearToDb(0), SPECTRUM_DB_RANGE)).toBe(0);
   });
 
-  it('reports a spectrum with no energy as null so the card reads as silence', () => {
-    const silent = {
-      bins: new Float32Array(4).fill(ANALYSIS_FLOOR_DB),
-    } as unknown as FrameAnalysis;
-
-    expect(spectrumBins(silent)).toBeNull();
-
-    const lively = {
-      bins: Float32Array.from([ANALYSIS_FLOOR_DB, -40, -20, -10]),
-    } as unknown as FrameAnalysis;
-
-    expect(spectrumBins(lively)).toBe(lively.bins);
-    expect(spectrumBins(null)).toBeNull();
+  it('draws a silent spectrum as a flat row instead of an empty card', () => {
+    // Every bin sits on the metering floor when the input is muted; on the
+    // -80..0 display scale that is a zero-height bar for all 160 of them.
+    expect(toBarFraction(ANALYSIS_FLOOR_DB, SPECTRUM_DB_RANGE)).toBe(0);
+    expect(toBarFraction(-80, SPECTRUM_DB_RANGE)).toBe(0);
   });
 });
 

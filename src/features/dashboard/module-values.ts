@@ -24,29 +24,13 @@ export const VU_BAR_DB_RANGE = [-60, 0] as const;
 export const LOUDNESS_BAR_DB_RANGE = [LOUDNESS_GATE_LUFS, 0] as const;
 
 /**
- * Bins to draw, or `null` when the spectrum has never seen energy.
+ * dB window the spectrum and spectrogram span.
  *
- * A muted input leaves every bin on the -100 dBFS floor, which draws 160 full-
- * width bars sitting exactly on zero — a picture that reads as a broken meter
- * rather than as silence.
+ * Everything quieter than the floor clamps to a zero-height bar, which is the
+ * honest picture of silence: a flat row at the bottom. Silence must *not* become
+ * a `waiting` state — "waiting for data" means no frame has arrived, and a muted
+ * input still delivers frames.
  */
-export function spectrumBins(
-  analysis: FrameAnalysis | null,
-): Float32Array | null {
-  if (!analysis) {
-    return null;
-  }
-
-  for (let index = 0; index < analysis.bins.length; index += 1) {
-    if (analysis.bins[index] > SPECTRUM_DISPLAY_FLOOR_DB) {
-      return analysis.bins;
-    }
-  }
-
-  return null;
-}
-
-/** dB window the spectrum/spectrogram span. */
 export const SPECTRUM_DB_RANGE = [SPECTRUM_DISPLAY_FLOOR_DB, 0] as const;
 
 export type NumericRange = readonly [number, number];
