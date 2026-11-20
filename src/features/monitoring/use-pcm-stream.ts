@@ -223,6 +223,9 @@ export function usePcmStream({
     lastFrameAtRef.current = Date.now();
 
     const refresh = () => {
+      // Count the backlog *before* draining: the difference between what was
+      // waiting and what we took is exactly what the caps threw away.
+      const pending = client.getPendingFrameCount();
       const startedAt = Date.now();
       const frames = client.drainFrames();
 
@@ -241,9 +244,11 @@ export function usePcmStream({
               : 0;
 
           recordStreamDrain({
-            queueMs: frameMs * frames.length,
+            queueMs: frameMs * pending,
             drainMs: Date.now() - startedAt,
             frames: frames.length,
+            pending,
+            dropped: Math.max(0, pending - frames.length),
           });
         }
 
