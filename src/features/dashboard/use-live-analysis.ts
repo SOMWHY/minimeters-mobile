@@ -25,9 +25,13 @@ export type LiveAnalysis = {
  * loudness gate, all of which describe audio that is no longer playing, so the
  * first frame after `sessionId` changes begins from a clean engine and an empty
  * spectrogram rather than carrying the old device's history into the new one.
+ *
+ * Every frame of a poll batch is pushed, not only the newest: the engine's
+ * ballistics are driven by the audio each frame carries, so skipping frames
+ * scales every time constant by the skip factor.
  */
 export function useLiveAnalysis(): LiveAnalysis {
-  const { sessionId, subscribe } = usePcmConnection();
+  const { sessionId, subscribeFrames } = usePcmConnection();
   const [live, setLive] = useState<Omit<LiveAnalysis, 'reset'>>({
     analysis: null,
     history: [],
@@ -43,7 +47,11 @@ export function useLiveAnalysis(): LiveAnalysis {
 
   useEffect(
     () =>
-      subscribe((frame) => {
+      subscribeFrames((frames) => {
+        if (frames.length === 0) {
+          return;
+        }
+
         const isNewSession =
           engineRef.current === null || analysedSessionRef.current !== sessionIdRef.current;
         const engine = (engineRef.current ??= createAnalysisEngine());
@@ -54,15 +62,18 @@ export function useLiveAnalysis(): LiveAnalysis {
         }
 
         setLive((previous) => {
-          const analysis = engine.push(frame);
+          let history = isNewSession ? [] : previous.history;
+          let analysis: FrameAnalysis | null = null;
 
-          return {
-            analysis,
-            history: appendRow(isNewSession ? [] : previous.history, analysis.spectrogramRow),
-          };
+          for (const frame of frames) {
+            analysis = engine.push(frame);
+            history = appendRow(history, analysis.spectrogramRow);
+          }
+
+          return { analysis, history };
         });
       }),
-    [subscribe],
+    [subscribeFrames],
   );
 
   const reset = useCallback(() => {

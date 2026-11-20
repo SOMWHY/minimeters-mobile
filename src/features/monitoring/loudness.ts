@@ -32,6 +32,17 @@ export const INTEGRATED_RELATIVE_GATE_LU = 10;
 const MAX_INTEGRATED_BLOCKS = 3600;
 
 /**
+ * How long the programme may sit below the absolute gate before the integrated
+ * measurement starts over.
+ *
+ * Integrated loudness is a programme average by definition, so it must not drift
+ * while the transport is stopped. Without this reset a muted input would keep a
+ * stale average on screen forever; with it, the next programme begins from a
+ * fresh measurement instead of inheriting the previous one.
+ */
+export const INTEGRATED_RESET_SILENCE_MS = 5000;
+
+/**
  * K-weighting coefficients for any sample rate.
  *
  * BS.1770 publishes the 48 kHz numbers, but the filters are re-derived for other
@@ -143,6 +154,7 @@ export function createLoudnessMeter(sampleRate: number): LoudnessMeter {
   const samplesFor = (windowMs: number): number => Math.max(1, Math.round((windowMs * rate) / 1000));
   const momentarySamples = samplesFor(MOMENTARY_WINDOW_MS);
   const shortTermSamples = samplesFor(SHORT_TERM_WINDOW_MS);
+  const silentResetSamples = samplesFor(INTEGRATED_RESET_SILENCE_MS);
   const blockSamples = momentarySamples;
   const filters = kWeightingCoefficients(rate);
 
@@ -153,6 +165,7 @@ export function createLoudnessMeter(sampleRate: number): LoudnessMeter {
   let blockSumSquares = 0;
   let blockCount = 0;
   let blocks: number[] = [];
+  let silentSamples = 0;
 
   function reset(): void {
     entries = [];
@@ -161,6 +174,7 @@ export function createLoudnessMeter(sampleRate: number): LoudnessMeter {
     blockSumSquares = 0;
     blockCount = 0;
     blocks = [];
+    silentSamples = 0;
   }
 
   function accumulateIntegrated(sumSquares: number, count: number): void {
@@ -222,6 +236,18 @@ export function createLoudnessMeter(sampleRate: number): LoudnessMeter {
     entries.push({ sumSquares, count });
     totalSamples += count;
     accumulateIntegrated(sumSquares, count);
+
+    if (toLufs(sumSquares / count) <= LOUDNESS_GATE_LUFS) {
+      silentSamples += count;
+
+      if (silentSamples >= silentResetSamples && blocks.length > 0) {
+        blockSumSquares = 0;
+        blockCount = 0;
+        blocks = [];
+      }
+    } else {
+      silentSamples = 0;
+    }
 
     // Drop whole slices first, then trim the oldest partially so the window
     // stays exact instead of quantising to the frame length. The buffer keeps

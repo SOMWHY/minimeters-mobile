@@ -6,6 +6,7 @@ import {
 } from './analysis';
 import {
   createLoudnessMeter,
+  INTEGRATED_RESET_SILENCE_MS,
   LOUDNESS_GATE_LUFS,
   MOMENTARY_WINDOW_MS,
   SHORT_TERM_WINDOW_MS,
@@ -125,6 +126,37 @@ describe('loudness windows', () => {
     meter.push([]);
     meter.push([new Float32Array(0)]);
 
+    expect(meter.integrated()).toBeGreaterThan(LOUDNESS_GATE_LUFS);
+  });
+
+  it('holds the integrated average through a short gap, then starts over', () => {
+    const meter = createLoudnessMeter(48000);
+
+    feed(meter, 0.5, 6000);
+
+    const measured = meter.integrated();
+
+    expect(measured).toBeGreaterThan(LOUDNESS_GATE_LUFS);
+
+    // A programme average must survive a breath, a mute between takes, or the
+    // tail of a fade — it only starts over once the input is truly quiet.
+    feed(meter, 0, INTEGRATED_RESET_SILENCE_MS - 1000);
+    expect(meter.integrated()).toBeCloseTo(measured, 5);
+
+    feed(meter, 0, 2000);
+    expect(meter.integrated()).toBe(LOUDNESS_GATE_LUFS);
+  });
+
+  it('keeps momentary live so a muted input falls to the gate at once', () => {
+    const meter = createLoudnessMeter(48000);
+
+    feed(meter, 0.5, 6000);
+    expect(meter.value()).toBeGreaterThan(LOUDNESS_GATE_LUFS);
+
+    feed(meter, 0, MOMENTARY_WINDOW_MS + 100);
+
+    expect(meter.value()).toBe(LOUDNESS_GATE_LUFS);
+    // Integrated deliberately lags: it describes the whole programme.
     expect(meter.integrated()).toBeGreaterThan(LOUDNESS_GATE_LUFS);
   });
 });

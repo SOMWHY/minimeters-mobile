@@ -2,12 +2,17 @@ import {
   classifyFailure,
   nextRetryDelay,
   RECONNECT_DELAYS_MS,
+  REAUTH_RETRY_MS,
   STALL_TIMEOUT_MS,
 } from './reconnect';
 
 describe('classifyFailure', () => {
-  it('treats a rejected pairing code as terminal', () => {
-    expect(classifyFailure('invalid_token')).toBe('terminal_auth');
+  it('treats a rejected pairing code as a slow re-auth, not a dead end', () => {
+    // The phone keeps the last frame on screen and retries slowly: a re-scan
+    // issues a new token and must recover without the user restarting anything.
+    expect(classifyFailure('invalid_token')).toBe('reauth_required');
+    expect(nextRetryDelay(0)).not.toBeNull();
+    expect(REAUTH_RETRY_MS).toBeGreaterThan(RECONNECT_DELAYS_MS[0]!);
   });
 
   it('treats a protocol violation as terminal', () => {

@@ -22,11 +22,32 @@ export type SocketTransport = {
 
 export type SocketFactory = (url: string, handlers: SocketHandlers) => SocketTransport;
 
+/**
+ * What the socket needs to authenticate: the QR payload, plus the long-lived
+ * device token once the server has issued one.
+ */
+export type PcmSocketCredentials = PairingPayload & {
+  readonly deviceToken?: string | null;
+};
+
 export type PcmSocketClientCallbacks = {
   onState?: (state: PcmConnectionState) => void;
   onProtocolError?: (reason: PcmDecodeError | 'binary_before_authentication' | 'invalid_control_message') => void;
   onError?: (message: string) => void;
+  /** The server accepted us; a device token means future reconnects need no QR scan. */
+  onAuthenticated?: (info: { deviceToken: string | null }) => void;
+  /** Liveness ping sent when the host has no audio to publish. */
+  onHeartbeat?: () => void;
 };
+
+/**
+ * How much audio is kept before the oldest frames are dropped.
+ *
+ * The host polls at 10 Hz, so a healthy stream buffers ~100 ms. The cap only
+ * matters after a stall: replaying minutes of backlog would make the meters
+ * lag by minutes instead of resynchronising.
+ */
+export const MAX_BUFFERED_SECONDS = 2;
 
 function createWebSocket(url: string, handlers: SocketHandlers): SocketTransport {
   const socket = new WebSocket(url);
@@ -51,15 +72,21 @@ export class PcmSocketClient {
   private generation = 0;
   private authenticated = false;
   private state: PcmConnectionState = 'disconnected';
-  private latestFrame: PcmAudioFrame | null = null;
+  private frames: PcmAudioFrame[] = [];
+  private bufferedSamples = 0;
+  private lastDeviceToken: string | null = null;
+  /** Long-lived credential presented on every handshake, if the server issued one. */
+  private deviceToken: string | null = null;
   private receivedFrameCount = 0;
   private lastErrorCode: string | null = null;
 
   constructor(
-    private readonly pairing: PairingPayload,
+    private readonly pairing: PcmSocketCredentials,
     private readonly callbacks: PcmSocketClientCallbacks = {},
     private readonly socketFactory: SocketFactory = createWebSocket,
-  ) {}
+  ) {
+    this.deviceToken = this.pairing.deviceToken ?? null;
+  }
 
   connect(): void {
     if (this.socket) {
@@ -68,7 +95,7 @@ export class PcmSocketClient {
 
     const generation = ++this.generation;
     this.authenticated = false;
-    this.latestFrame = null;
+    this.clearFrames();
     this.receivedFrameCount = 0;
     this.lastErrorCode = null;
     this.setState('connecting');
@@ -89,6 +116,9 @@ export class PcmSocketClient {
                   type: 'authenticate',
                   version: 1,
                   token: this.pairing.token,
+                  // Sent only after the first pairing: a known device is not
+                  // gated by the QR code's expiry.
+                  ...(this.deviceToken ? { deviceToken: this.deviceToken } : {}),
                 }),
               );
             } catch {
@@ -116,14 +146,42 @@ export class PcmSocketClient {
     this.generation += 1;
     this.socket = null;
     this.authenticated = false;
-    this.latestFrame = null;
+    this.clearFrames();
     this.receivedFrameCount = 0;
     socket?.close();
     this.setState('disconnected');
   }
 
+  /** The most recent decoded frame, kept for the diagnostics screen. */
   getLatestFrame(): PcmAudioFrame | null {
-    return this.latestFrame;
+    return this.frames.length === 0
+      ? null
+      : this.frames[this.frames.length - 1]!;
+  }
+
+  /**
+   * Removes and returns every frame received since the previous drain.
+   *
+   * Analysis must consume the whole buffer: reading only the newest frame
+   * silently discards most of the audio, which makes every duration-based
+   * meter (peak hold, RMS window, VU release) advance slower than real time.
+   */
+  drainFrames(): PcmAudioFrame[] {
+    const drained = this.frames;
+    this.frames = [];
+    this.bufferedSamples = 0;
+
+    return drained;
+  }
+
+  /** Frames waiting for the next drain; diagnostics and tests only. */
+  getPendingFrameCount(): number {
+    return this.frames.length;
+  }
+
+  /** Device token issued by the server on the current or a previous pairing. */
+  getDeviceToken(): string | null {
+    return this.lastDeviceToken;
   }
 
   getReceivedFrameCount(): number {
@@ -151,9 +209,35 @@ export class PcmSocketClient {
     this.generation += 1;
     this.socket = null;
     this.authenticated = false;
-    this.latestFrame = null;
+    this.clearFrames();
     this.receivedFrameCount = 0;
     socket?.close();
+  }
+
+  private clearFrames(): void {
+    this.frames = [];
+    this.bufferedSamples = 0;
+  }
+
+  private pushFrame(frame: PcmAudioFrame): void {
+    this.frames.push(frame);
+    this.bufferedSamples += Number.isFinite(frame.samplesPerChannel)
+      ? frame.samplesPerChannel
+      : 0;
+
+    const sampleRate =
+      Number.isFinite(frame.sampleRate) && frame.sampleRate > 0
+        ? frame.sampleRate
+        : 48000;
+    const cap = Math.max(1, Math.floor(sampleRate * MAX_BUFFERED_SECONDS));
+
+    while (this.bufferedSamples > cap && this.frames.length > 1) {
+      const dropped = this.frames.shift();
+      this.bufferedSamples -=
+        dropped !== undefined && Number.isFinite(dropped.samplesPerChannel)
+          ? dropped.samplesPerChannel
+          : 0;
+    }
   }
 
   private handleMessage(generation: number, socket: SocketTransport, data: unknown): void {
@@ -185,7 +269,7 @@ export class PcmSocketClient {
       return;
     }
 
-    this.latestFrame = result.frame;
+    this.pushFrame(result.frame);
     this.receivedFrameCount += 1;
   }
 
@@ -216,13 +300,28 @@ export class PcmSocketClient {
       return;
     }
 
+    if (message.type === 'heartbeat') {
+      this.callbacks.onHeartbeat?.();
+      return;
+    }
+
     if (
       message.type === 'authenticated' &&
       message.version === 1 &&
       message.sampleFormat === 'f32le'
     ) {
       this.authenticated = true;
+      this.lastDeviceToken =
+        typeof message.deviceToken === 'string' ? message.deviceToken : null;
+
+      if (this.lastDeviceToken) {
+        // Reuse it on every later reconnect, so an expired QR code cannot lock
+        // this phone out of a plugin it has already paired with.
+        this.deviceToken = this.lastDeviceToken;
+      }
+
       this.setState('connected');
+      this.callbacks.onAuthenticated?.({ deviceToken: this.lastDeviceToken });
       return;
     }
 
@@ -237,7 +336,7 @@ export class PcmSocketClient {
 
     this.socket = null;
     this.authenticated = false;
-    this.latestFrame = null;
+    this.clearFrames();
     this.receivedFrameCount = 0;
     if (this.state !== 'error') {
       this.setState('disconnected');
@@ -259,7 +358,7 @@ export class PcmSocketClient {
     // Clear the socket first so the retry path can reconnect immediately and a
     // late close event cannot restart the state machine.
     this.socket = null;
-    this.latestFrame = null;
+    this.clearFrames();
     this.receivedFrameCount = 0;
     this.setState('error');
     this.callbacks.onError?.(message);

@@ -58,10 +58,12 @@ describe('toBarFraction', () => {
     expect(toBarFraction(-20, VU_BAR_DB_RANGE)).toBeCloseTo(2 / 3, 5);
   });
 
-  it('gives the loudness meter a wider window than the VU', () => {
-    // The VU bar stops at -60 dBFS; the loudness bar runs to the analysis floor.
-    expect(toBarFraction(-20, LOUDNESS_BAR_DB_RANGE)).toBeCloseTo(0.8, 5);
-    expect(toBarFraction(-70, LOUDNESS_BAR_DB_RANGE)).toBeCloseTo(0.3, 5);
+  it('anchors the loudness bar to the gate so the live value uses the whole bar', () => {
+    // Momentary loudness never reads below -70 LUFS, so a -70..0 window keeps
+    // the reachable range spread across the bar instead of stranding a third.
+    expect(LOUDNESS_BAR_DB_RANGE[0]).toBe(-70);
+    expect(toBarFraction(-20, LOUDNESS_BAR_DB_RANGE)).toBeCloseTo(5 / 7, 5);
+    expect(toBarFraction(-70, LOUDNESS_BAR_DB_RANGE)).toBe(0);
   });
 
   it('clamps outside the window', () => {
@@ -114,19 +116,33 @@ describe('vuLevels', () => {
 });
 
 describe('loudnessValues', () => {
-  it('reports peak and RMS in dBFS and passes LUFS through', () => {
-    const values = loudnessValues(analysisOf({ rms: 0.1, peak: 0.5, lufs: -14.2 }));
+  it('draws the live momentary value and carries integrated as a note', () => {
+    const values = loudnessValues(
+      analysisOf({ rms: 0.1, peak: 0.5, lufs: -14.2, momentaryLufs: -12.3 }),
+    );
 
     expect(values.peak).toBeCloseTo(-6.02, 2);
     expect(values.rms).toBeCloseTo(-20, 5);
-    expect(values.lufs).toBe(-14.2);
+    // The bar tracks what is playing; the programme average rides alongside.
+    expect(values.lufs).toBe(-12.3);
+    expect(values.integrated).toBe(-14.2);
+  });
+
+  it('lets the bar follow silence while integrated holds its average', () => {
+    const values = loudnessValues(
+      analysisOf({ rms: 0, peak: 0, lufs: -14.2, momentaryLufs: -70 }),
+    );
+
+    expect(values.lufs).toBe(-70);
+    expect(values.integrated).toBe(-14.2);
   });
 });
 
 describe('loudnessReadout', () => {
-  it('names all three windows so the headline LUFS is never ambiguous', () => {
-    expect(loudnessReadout(analysisOf({ lufs: -14.24, momentaryLufs: -12.31, shortTermLufs: -13.05 })))
-      .toBe('-14.2 LUFS (M -12.3 / S -13.1)');
+  it('names all three windows so the headline number is never ambiguous', () => {
+    expect(
+      loudnessReadout(analysisOf({ lufs: -14.24, momentaryLufs: -12.31, shortTermLufs: -13.05 })),
+    ).toBe('INT -14.2 · M -12.3 · S -13.1');
   });
 
   it('is empty before the first frame', () => {
@@ -135,9 +151,7 @@ describe('loudnessReadout', () => {
 
   it('keeps the gates readable when the signal is silent', () => {
     expect(
-      loudnessReadout(
-        analysisOf({ lufs: -70, momentaryLufs: -70, shortTermLufs: -70 }),
-      ),
-    ).toBe('-70.0 LUFS (M -70.0 / S -70.0)');
+      loudnessReadout(analysisOf({ lufs: -70, momentaryLufs: -70, shortTermLufs: -70 })),
+    ).toBe('INT -70.0 · M -70.0 · S -70.0');
   });
 });

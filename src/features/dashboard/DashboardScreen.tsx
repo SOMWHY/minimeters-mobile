@@ -41,10 +41,12 @@ const connectionLabels: Record<PcmConnectionState, string> = {
 };
 
 const fatalMessages = {
-  auth: 'The pairing code expired. Scan the plugin QR code again.',
   protocol: 'The plugin and the phone disagree about the audio format.',
   unreachable: 'Lost the connection to the plugin.',
 } as const;
+
+/** Shown when the server rejects the token; the last frame stays on screen. */
+const REAUTH_MESSAGE = 'The pairing code expired. Scan the plugin QR code again.';
 
 export type DashboardScreenProps = {
   /** Injected for tests; defaults to device storage. */
@@ -90,15 +92,17 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     setLayout({ items: setVisibility(layout.items, id, true, config) });
   };
 
-  const banner = stream.fatalError
-    ? fatalMessages[stream.fatalError]
-    : stream.reconnecting
-      ? `Reconnecting… (attempt ${stream.retryAttempt})`
-      : stream.connectionError
-        ? `Error: ${stream.connectionError}`
-        : stream.protocolError
-          ? `Protocol error: ${stream.protocolError}`
-          : null;
+  const banner = stream.reauthRequired
+    ? REAUTH_MESSAGE
+    : stream.fatalError
+      ? fatalMessages[stream.fatalError]
+      : stream.reconnecting
+        ? `Reconnecting… (attempt ${stream.retryAttempt})`
+        : stream.connectionError
+          ? `Error: ${stream.connectionError}`
+          : stream.protocolError
+            ? `Protocol error: ${stream.protocolError}`
+            : null;
 
   return (
     <ThemedView style={styles.container}>

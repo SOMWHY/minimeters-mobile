@@ -15,6 +15,17 @@ export type PcmConnectionValue = PcmStream & {
    * observe the same socket without opening a second one.
    */
   readonly subscribe: (listener: (frame: PcmAudioFrame) => void) => () => void;
+  /**
+   * Run `listener` once per poll with **every** frame received since the last
+   * poll, in arrival order.
+   *
+   * Analysis subscribers must use this rather than `subscribe`: the socket
+   * buffers ~10 blocks per second and dropping all but the newest one makes
+   * duration-based meters advance far slower than wall-clock time.
+   */
+  readonly subscribeFrames: (
+    listener: (frames: PcmAudioFrame[]) => void,
+  ) => () => void;
 };
 
 const PcmConnectionContext = createContext<PcmConnectionValue | null>(null);
@@ -27,6 +38,7 @@ export function PcmConnectionProvider({
   socketFactory?: SocketFactory;
 }) {
   const listenersRef = useRef(new Set<(frame: PcmAudioFrame) => void>());
+  const frameListenersRef = useRef(new Set<(frames: PcmAudioFrame[]) => void>());
 
   const handleFrame = useCallback((frame: PcmAudioFrame) => {
     for (const listener of listenersRef.current) {
@@ -34,7 +46,17 @@ export function PcmConnectionProvider({
     }
   }, []);
 
-  const stream = usePcmStream({ socketFactory, onFrame: handleFrame });
+  const handleFrames = useCallback((frames: PcmAudioFrame[]) => {
+    for (const listener of frameListenersRef.current) {
+      listener(frames);
+    }
+  }, []);
+
+  const stream = usePcmStream({
+    socketFactory,
+    onFrame: handleFrame,
+    onFrames: handleFrames,
+  });
 
   const subscribe = useCallback((listener: (frame: PcmAudioFrame) => void) => {
     listenersRef.current.add(listener);
@@ -44,7 +66,21 @@ export function PcmConnectionProvider({
     };
   }, []);
 
-  const value = useMemo<PcmConnectionValue>(() => ({ ...stream, subscribe }), [stream, subscribe]);
+  const subscribeFrames = useCallback(
+    (listener: (frames: PcmAudioFrame[]) => void) => {
+      frameListenersRef.current.add(listener);
+
+      return () => {
+        frameListenersRef.current.delete(listener);
+      };
+    },
+    [],
+  );
+
+  const value = useMemo<PcmConnectionValue>(
+    () => ({ ...stream, subscribe, subscribeFrames }),
+    [stream, subscribe, subscribeFrames],
+  );
 
   return <PcmConnectionContext.Provider value={value}>{children}</PcmConnectionContext.Provider>;
 }

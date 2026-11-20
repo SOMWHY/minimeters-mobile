@@ -1,10 +1,12 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
 
 import { THEME_STORAGE_KEY } from './layout-storage';
 import { PcmConnectionProvider } from '@/features/connection/connection-context';
 import type { SocketFactory, SocketHandlers } from '@/features/connection/pcm-socket-client';
 import { pcmPairing } from '@/features/connection/test-fixtures';
+import { PAIRING_STORAGE_KEY } from '@/features/connection/pairing-storage';
 import { STALL_TIMEOUT_MS } from '@/features/connection/reconnect';
 import { STREAM_REFRESH_MS } from '@/features/monitoring/use-pcm-stream';
 
@@ -89,7 +91,10 @@ function memoryStorage(): LayoutStorageDeps & { readonly store: Map<string, stri
 }
 
 describe('DashboardScreen', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The stream remembers the last pairing in AsyncStorage (the jest mock is
+    // shared across tests), so a test that scans would auto-connect the next one.
+    await AsyncStorage.clear();
     jest.useFakeTimers();
     mockUseCameraPermissions.mockReturnValue([
       {
@@ -153,11 +158,69 @@ describe('DashboardScreen', () => {
 
     expect(
       screen.getByText(
-        /^Connected · 1 frames · -?\d+\.\d LUFS \(M -?\d+\.\d \/ S -?\d+\.\d\)$/,
+        /^Connected · 1 frames · INT -?\d+\.\d · M -?\d+\.\d · S -?\d+\.\d$/,
       ),
     ).toBeTruthy();
     await layoutGrid(screen);
     expect(screen.getByText('module:waveform')).toBeTruthy();
+
+    screen.unmount();
+  });
+
+  it('reconnects on launch with the stored device token and skips the scanner', async () => {
+    const sent: string[] = [];
+    let socketHandlers: SocketHandlers | null = null;
+    const socketFactory: SocketFactory = jest.fn((_url, handlers) => {
+      socketHandlers = handlers;
+      return { send: (data: string) => sent.push(data), close: jest.fn() };
+    });
+
+    await AsyncStorage.setItem(
+      PAIRING_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        address: '192.168.1.20',
+        port: 8422,
+        path: '/ws',
+        token: 'expired-qr-token',
+        deviceToken: 'kept-device-token',
+      }),
+    );
+
+    const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
+    await act(async () => {});
+
+    // No scan: the stored pairing drives the connection.
+    expect(socketFactory).toHaveBeenCalledWith('ws://192.168.1.20:8422/ws', expect.any(Object));
+    expect(screen.queryByText('Scan plugin QR code')).toBeNull();
+
+    if (!socketHandlers) {
+      throw new Error('Expected the socket factory to capture handlers');
+    }
+
+    await act(async () => socketHandlers?.onOpen());
+    expect(JSON.parse(sent[0] ?? '{}')).toMatchObject({
+      type: 'authenticate',
+      token: 'expired-qr-token',
+      deviceToken: 'kept-device-token',
+    });
+
+    await act(async () =>
+      socketHandlers?.onMessage(
+        JSON.stringify({
+          type: 'authenticated',
+          version: 1,
+          sampleFormat: 'f32le',
+          deviceToken: 'rotated-device-token',
+        }),
+      ),
+    );
+    await act(async () => {});
+
+    // A token the server rotated is what the next launch will present.
+    expect(JSON.parse((await AsyncStorage.getItem(PAIRING_STORAGE_KEY)) ?? '{}')).toMatchObject({
+      deviceToken: 'rotated-device-token',
+    });
 
     screen.unmount();
   });
@@ -330,7 +393,7 @@ describe('DashboardScreen', () => {
     screen.unmount();
   });
 
-  it('stops retrying once the server rejects the pairing code', async () => {
+  it('keeps the session alive and retries slowly after a rejected token', async () => {
     const handlers: SocketHandlers[] = [];
     const socketFactory: SocketFactory = jest.fn((_url, socketHandlers) => {
       handlers.push(socketHandlers);
@@ -352,13 +415,17 @@ describe('DashboardScreen', () => {
 
     expect(screen.getByText('The pairing code expired. Scan the plugin QR code again.')).toBeTruthy();
 
+    // A rejected token is a slow re-auth, not a dead end: the phone keeps the
+    // last frame and retries so that a fresh scan recovers on its own.
     await act(async () => {
-      jest.advanceTimersByTime(60_000);
+      jest.advanceTimersByTime(29_000);
     });
-
-    // The server only checks the token during the handshake, so retrying an
-    // expired one would fail forever — the user has to scan again.
     expect(socketFactory).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(2_000);
+    });
+    expect(socketFactory).toHaveBeenCalledTimes(2);
 
     screen.unmount();
   });

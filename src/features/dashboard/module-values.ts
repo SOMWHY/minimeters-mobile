@@ -1,4 +1,5 @@
 import { ANALYSIS_FLOOR_DB, type FrameAnalysis } from '@/features/monitoring/analysis';
+import { LOUDNESS_GATE_LUFS } from '@/features/monitoring/loudness';
 
 /**
  * Display mapping between analysis numbers and what the library modules draw.
@@ -10,8 +11,13 @@ import { ANALYSIS_FLOOR_DB, type FrameAnalysis } from '@/features/monitoring/ana
 /** dB window the VU bars span. A VU needs a finite bottom or silence is off-scale. */
 export const VU_BAR_DB_RANGE = [-60, 0] as const;
 
-/** dB window the loudness bars span. */
-export const LOUDNESS_BAR_DB_RANGE = [ANALYSIS_FLOOR_DB, 0] as const;
+/**
+ * dB window the loudness bars span.
+ *
+ * Momentary loudness never reads below the -70 LUFS gate, so the bar starts
+ * there: a wider window would leave the bottom third of the bar unreachable.
+ */
+export const LOUDNESS_BAR_DB_RANGE = [LOUDNESS_GATE_LUFS, 0] as const;
 
 /** dB window the spectrum/spectrogram span. */
 export const SPECTRUM_DB_RANGE = [ANALYSIS_FLOOR_DB, 0] as const;
@@ -55,12 +61,19 @@ export function vuLevels(analysis: FrameAnalysis) {
   };
 }
 
-/** Loudness readouts: peak and RMS in dBFS, LUFS integrated. */
+/**
+ * Loudness readouts.
+ *
+ * The bar draws the **momentary** value so it tracks what is playing right now;
+ * the programme-integrated average travels alongside as the `INT` note, because
+ * by definition it does not fall when the programme goes quiet.
+ */
 export function loudnessValues(analysis: FrameAnalysis) {
   return {
     peak: linearToDb(analysis.peak),
     rms: linearToDb(analysis.rms),
-    lufs: analysis.lufs,
+    lufs: analysis.momentaryLufs,
+    integrated: analysis.lufs,
   };
 }
 
@@ -80,5 +93,5 @@ export function loudnessReadout(analysis: FrameAnalysis | null): string {
   const momentary = analysis.momentaryLufs.toFixed(1);
   const shortTerm = analysis.shortTermLufs.toFixed(1);
 
-  return `${integrated} LUFS (M ${momentary} / S ${shortTerm})`;
+  return `INT ${integrated} · M ${momentary} · S ${shortTerm}`;
 }

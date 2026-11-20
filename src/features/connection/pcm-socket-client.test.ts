@@ -152,4 +152,68 @@ describe('PcmSocketClient', () => {
 
     expect(fake.factory).toHaveBeenCalledTimes(1);
   });
+
+  it('drains every buffered frame so analysis never skips audio', () => {
+    const fake = createFakeSocket();
+    const client = new PcmSocketClient(pcmPairing, {}, fake.factory);
+
+    client.connect();
+    fake.socket.handlers.onOpen();
+    fake.socket.handlers.onMessage(
+      JSON.stringify({ type: 'authenticated', version: 1, sampleFormat: 'f32le' }),
+    );
+    // The server publishes ~10 blocks per second; a 10 Hz poll receives three
+    // of them between ticks, and all three must reach the analysis engine.
+    fake.socket.handlers.onMessage(makeStereoFrame());
+    fake.socket.handlers.onMessage(makeStereoFrame());
+    fake.socket.handlers.onMessage(makeStereoFrame());
+
+    expect(client.getPendingFrameCount()).toBe(3);
+
+    const drained = client.drainFrames();
+
+    expect(drained).toHaveLength(3);
+    expect(client.getPendingFrameCount()).toBe(0);
+    // A drained buffer leaves the diagnostic "latest frame" empty rather than
+    // replaying a frame the analyser has already consumed.
+    expect(client.getLatestFrame()).toBeNull();
+    expect(client.getReceivedFrameCount()).toBe(3);
+  });
+
+  it('keeps the device token the server issues on authentication', () => {
+    const fake = createFakeSocket();
+    const onAuthenticated = jest.fn();
+    const client = new PcmSocketClient(pcmPairing, { onAuthenticated }, fake.factory);
+
+    client.connect();
+    fake.socket.handlers.onOpen();
+    fake.socket.handlers.onMessage(
+      JSON.stringify({
+        type: 'authenticated',
+        version: 1,
+        sampleFormat: 'f32le',
+        deviceToken: 'a'.repeat(32),
+      }),
+    );
+
+    expect(client.getDeviceToken()).toBe('a'.repeat(32));
+    expect(onAuthenticated).toHaveBeenCalledWith({ deviceToken: 'a'.repeat(32) });
+  });
+
+  it('accepts a heartbeat as liveness without inventing audio', () => {
+    const fake = createFakeSocket();
+    const onHeartbeat = jest.fn();
+    const client = new PcmSocketClient(pcmPairing, { onHeartbeat }, fake.factory);
+
+    client.connect();
+    fake.socket.handlers.onOpen();
+    fake.socket.handlers.onMessage(
+      JSON.stringify({ type: 'authenticated', version: 1, sampleFormat: 'f32le' }),
+    );
+    fake.socket.handlers.onMessage(JSON.stringify({ type: 'heartbeat' }));
+
+    expect(onHeartbeat).toHaveBeenCalledTimes(1);
+    expect(client.getPendingFrameCount()).toBe(0);
+    expect(client.getLatestFrame()).toBeNull();
+  });
 });
