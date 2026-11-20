@@ -10,7 +10,7 @@ import {
   saveTheme,
   type LayoutStorageDeps,
 } from './layout-storage';
-import { defaultLayout, restoreFactoryLayout } from './model';
+import { defaultLayout, fitToConfig, restoreFactoryLayout } from './model';
 
 /** Stable empty default, so callers that pass no registry do not re-run the effect. */
 const NO_THEMES: readonly string[] = [];
@@ -40,23 +40,56 @@ export function useDashboardLayout(
   const [layout, setLayoutState] = useState<DashboardLayout | null>(null);
   const [themeId, setThemeIdState] = useState(defaultThemeId);
   const loadedRef = useRef(false);
+  /** Latest config without making it a load dependency: see the rotation effect. */
+  const configRef = useRef(config);
+  /** Latest layout for the re-fit effect, which must not re-run on every change. */
+  const layoutRef = useRef<DashboardLayout | null>(null);
 
+  useEffect(() => {
+    configRef.current = config;
+  });
+
+  useEffect(() => {
+    layoutRef.current = layout;
+  });
+
+  // Read the stored layout exactly once per storage backend. The grid config is
+  // deliberately **not** a dependency: a rotation must re-fit the layout in hand,
+  // not throw it away and reload the one from disk.
   useEffect(() => {
     let active = true;
 
-    void loadLayout(storage, config).then((stored) => {
+    void loadLayout(storage, configRef.current).then((stored) => {
       if (!active) {
         return;
       }
 
       loadedRef.current = true;
+      layoutRef.current = stored;
       setLayoutState(stored);
     });
 
     return () => {
       active = false;
     };
-  }, [config, storage]);
+  }, [storage]);
+
+  // Rotation or resize: clamp the layout in hand onto the new column count and
+  // persist the result, so the next launch opens in the orientation it was left in.
+  const columns = config.columns;
+
+  useEffect(() => {
+    const current = layoutRef.current;
+
+    if (!loadedRef.current || current === null) {
+      return;
+    }
+
+    const next = { items: fitToConfig(current.items, configRef.current) };
+    layoutRef.current = next;
+    setLayoutState(next);
+    void saveLayout(storage, next);
+  }, [columns, storage]);
 
   useEffect(() => {
     let active = true;
@@ -82,6 +115,7 @@ export function useDashboardLayout(
 
   const setLayout = useCallback(
     (next: DashboardLayout) => {
+      layoutRef.current = next;
       setLayoutState(next);
 
       if (loadedRef.current) {
@@ -93,13 +127,16 @@ export function useDashboardLayout(
 
   const resetLayout = useCallback(() => {
     const next = restoreFactoryLayout(config);
+    layoutRef.current = next;
     setLayoutState(next);
     void saveLayout(storage, next);
   }, [config, storage]);
 
   const forgetLayout = useCallback(() => {
+    const next = defaultLayout();
+    layoutRef.current = next;
     void clearLayout(storage);
-    setLayoutState(defaultLayout());
+    setLayoutState(next);
   }, [storage]);
 
   return useMemo(

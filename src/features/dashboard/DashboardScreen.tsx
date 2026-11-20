@@ -23,7 +23,7 @@ import type { PcmConnectionState } from '@/features/connection/pcm-socket-client
 import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
 
-import { gridForWidth } from './model';
+import { gridForWindow } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
 import { loudnessReadout } from './module-values';
@@ -55,10 +55,10 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   const stream = usePcmConnection();
   const { analysis, history } = useLiveAnalysis();
 
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const scheme = useColorScheme();
 
-  const grid = useMemo(() => gridForWidth(width), [width]);
+  const grid = useMemo(() => gridForWindow({ width, height }), [height, width]);
   const { config, metrics } = grid;
   const defaultThemeId = scheme === 'dark' ? 'midnight' : 'ice';
   const { layout, themeId, setLayout, setThemeId, resetLayout } = useDashboardLayout(
@@ -69,6 +69,14 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   );
 
   const [editing, setEditing] = useState(false);
+  /**
+   * True while a card is being dragged or resized.
+   *
+   * Android's native scroll interceptor otherwise takes the gesture over mid-drag;
+   * the grid reports the gesture so the page can stop scrolling for its duration.
+   * Ordinary swipes still scroll, because a drag only arms after a still hold.
+   */
+  const [dragging, setDragging] = useState(false);
 
   const theme: VisualizationTheme =
     BUILT_IN_THEMES[themeId as keyof typeof BUILT_IN_THEMES] ?? BUILT_IN_THEMES.midnight;
@@ -97,8 +105,9 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
           testID="dashboard-scroll"
+          style={styles.scroll}
           contentContainerStyle={styles.content}
-          scrollEnabled={!editing}
+          scrollEnabled={!dragging}
         >
           <View style={styles.header}>
             <View style={styles.headerText}>
@@ -149,6 +158,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
               metrics={metrics}
               editing={editing}
               onLayoutChange={setLayout}
+              onGestureStateChange={setDragging}
               renderModule={(item, rect) => (
                 <ModuleBody
                   item={item}
@@ -170,8 +180,8 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
         {/*
           Everything the user needs while editing lives here, outside the scroll
-          view: dragging cards disables scrolling, so controls placed at the end
-          of the content can never be reached.
+          view: the page scrolls while editing, but a drag freezes it, so controls
+          placed at the end of the content could end up unreachable mid-gesture.
         */}
         <View style={styles.pinnedBar} testID="pinned-bar">
           {banner !== null && (
@@ -224,6 +234,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   safeArea: {
+    flex: 1,
+  },
+  scroll: {
     flex: 1,
   },
   toolbar: {

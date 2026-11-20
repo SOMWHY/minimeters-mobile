@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { ReactElement } from 'react';
 import {
   LoudnessModule,
@@ -54,7 +55,7 @@ export type ModuleBodyProps = {
  * `null` rather than zeros, so the library renders `waiting` instead of a flat
  * line that looks like real silence.
  */
-export function ModuleBody({
+function ModuleBodyBase({
   item,
   rect,
   theme,
@@ -103,3 +104,9 @@ export function ModuleBody({
       );
   }
 }
+
+/**
+ * Memoised so a 10 Hz frame stream does not re-render every module for changes
+ * that only concern the grid — entering edit mode, or a drag preview.
+ */
+export const ModuleBody = memo(ModuleBodyBase);

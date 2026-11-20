@@ -5,11 +5,11 @@ import {
 } from '@minimetermobile/ui/dist/dashboard';
 
 import {
-  DASHBOARD_WIDTH_THRESHOLD,
+  DASHBOARD_SHORT_SIDE_THRESHOLD,
   DEFAULT_DASHBOARD_ITEMS,
   defaultLayout,
   fitToConfig,
-  gridForWidth,
+  gridForWindow,
   restoreFactoryLayout,
 } from './model';
 
@@ -38,25 +38,41 @@ function expectNoOverlap(items: readonly DashboardItem[], columns: number) {
   }
 }
 
-describe('gridForWidth', () => {
-  it('uses the phone preset below the threshold', () => {
-    const { config, metrics } = gridForWidth(390);
+describe('gridForWindow', () => {
+  it('keeps the phone preset in both orientations', () => {
+    const portrait = gridForWindow({ width: 390, height: 844 });
+    const landscape = gridForWindow({ width: 844, height: 390 });
 
-    expect(metrics).toEqual(GRID_PRESETS.phone);
-    expect(config.columns).toBe(2);
-    expect(config.maxColSpan).toBe(2);
+    for (const { config, metrics } of [portrait, landscape]) {
+      expect(metrics).toEqual(GRID_PRESETS.phone);
+      expect(config.columns).toBe(2);
+      expect(config.maxColSpan).toBe(2);
+    }
   });
 
-  it('uses the tablet preset at and above the threshold', () => {
-    const below = gridForWidth(DASHBOARD_WIDTH_THRESHOLD - 1);
-    const at = gridForWidth(DASHBOARD_WIDTH_THRESHOLD);
-    const wide = gridForWidth(1024);
+  it('decides on the short side, so a wide phone stays two columns', () => {
+    const wideButShort = gridForWindow({
+      width: 2000,
+      height: DASHBOARD_SHORT_SIDE_THRESHOLD - 1,
+    });
 
-    expect(below.metrics).toEqual(GRID_PRESETS.phone);
-    expect(at.metrics).toEqual(GRID_PRESETS.tablet);
-    expect(wide.config.columns).toBe(4);
-    expect(wide.config.maxColSpan).toBe(4);
-    expect(wide.config.maxRowSpan).toBe(4);
+    expect(wideButShort.metrics).toEqual(GRID_PRESETS.phone);
+    expect(wideButShort.config.columns).toBe(2);
+  });
+
+  it('uses the tablet preset at the threshold in either orientation', () => {
+    const portrait = gridForWindow({
+      width: DASHBOARD_SHORT_SIDE_THRESHOLD,
+      height: 1280,
+    });
+    const landscape = gridForWindow({ width: 1024, height: 768 });
+
+    for (const { config, metrics } of [portrait, landscape]) {
+      expect(metrics).toEqual(GRID_PRESETS.tablet);
+      expect(config.columns).toBe(4);
+      expect(config.maxColSpan).toBe(4);
+      expect(config.maxRowSpan).toBe(4);
+    }
   });
 });
 
@@ -89,7 +105,7 @@ describe('defaultLayout', () => {
 
 describe('fitToConfig', () => {
   it('clamps a four-column layout down to two columns', () => {
-    const wide = gridForWidth(1024);
+    const wide = gridForWindow({ width: 1024, height: 768 });
     const wideItems: DashboardItem[] = DEFAULT_DASHBOARD_ITEMS.map((item, index) =>
       index === 0
         ? { ...item, placement: { col: 0, row: 0, colSpan: 4, rowSpan: 1 } }
@@ -99,7 +115,7 @@ describe('fitToConfig', () => {
     const fitted = fitToConfig(wideItems, wide.config);
     expect(fitted).toHaveLength(7);
 
-    const phone = gridForWidth(390);
+    const phone = gridForWindow({ width: 390, height: 844 });
     const squeezed = fitToConfig(fitted, phone.config);
 
     expect(squeezed).toHaveLength(7);
@@ -110,7 +126,7 @@ describe('fitToConfig', () => {
 
 describe('restoreFactoryLayout', () => {
   it('brings back the factory arrangement after edits', () => {
-    const phone = gridForWidth(390);
+    const phone = gridForWindow({ width: 390, height: 844 });
     const scrambled: DashboardItem[] = DEFAULT_DASHBOARD_ITEMS.map((item, index) => ({
       ...item,
       visible: index % 2 === 0,

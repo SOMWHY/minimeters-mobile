@@ -253,8 +253,9 @@ describe('DashboardScreen', () => {
 
     await fireEvent.press(screen.getByText('Edit layout'));
 
-    // Scrolling is disabled while editing, so these must sit outside the scroll view.
-    expect(screen.getByTestId('dashboard-scroll').props.scrollEnabled).toBe(false);
+    // Editing keeps the page scrollable — a long grid has to be reachable — while
+    // a card drag freezes it for the duration of the gesture.
+    expect(screen.getByTestId('dashboard-scroll').props.scrollEnabled).toBe(true);
     expect(screen.getByTestId('pinned-bar')).toContainElement(
       screen.getByText('Reset layout'),
     );

@@ -10,24 +10,34 @@ import {
 } from '@minimetermobile/ui/dist/dashboard';
 
 /**
- * Width at which the dashboard switches from the phone grid to the wider one.
+ * Shortest-side width at which the dashboard switches to the tablet grid.
  *
- * 700 dp is above every phone in landscape we care about and below a tablet in
- * portrait, so the switch reads as a form-factor change rather than a fluke of
- * one device.
+ * Keyed to the short side rather than the width on purpose: a phone in landscape
+ * is still a phone, and rotating a 390 dp-wide device must not silently turn its
+ * two readable columns into four cramped ones. 600 dp is above every phone and
+ * below every tablet in either orientation.
  */
-export const DASHBOARD_WIDTH_THRESHOLD = 700;
+export const DASHBOARD_SHORT_SIDE_THRESHOLD = 600;
 
 /**
- * Grid geometry for a measured window width.
+ * Grid geometry for the current window.
  *
  * `config.columns` must follow the preset: the library measures one column from
  * `config.columns` and reads row height from `metrics`, so the two disagreeing
  * would misplace every card.
  */
-export function gridForWidth(width: number): { metrics: GridMetrics; config: GridConfig } {
+export function gridForWindow(window: {
+  readonly width: number;
+  readonly height: number;
+}): { metrics: GridMetrics; config: GridConfig } {
+  const shortSide = Math.min(
+    Math.abs(window.width),
+    Math.abs(window.height),
+  );
   const metrics =
-    width >= DASHBOARD_WIDTH_THRESHOLD ? GRID_PRESETS.tablet : GRID_PRESETS.phone;
+    shortSide >= DASHBOARD_SHORT_SIDE_THRESHOLD
+      ? GRID_PRESETS.tablet
+      : GRID_PRESETS.phone;
 
   return {
     metrics,

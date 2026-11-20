@@ -1,6 +1,6 @@
 import type { DashboardItem, DashboardLayout, GridPlacement } from '@minimetermobile/ui/dist/dashboard';
 
-import { defaultLayout, gridForWidth } from './model';
+import { defaultLayout, gridForWindow } from './model';
 import {
   LAYOUT_STORAGE_KEY,
   THEME_STORAGE_KEY,
@@ -29,7 +29,7 @@ function memoryStorage(initial: Record<string, string> = {}): LayoutStorageDeps 
   };
 }
 
-const phone = gridForWidth(390);
+const phone = gridForWindow({ width: 390, height: 844 });
 
 function keys(layout: DashboardLayout): string[] {
   return layout.items.map(
@@ -128,7 +128,7 @@ describe('loadLayout', () => {
   });
 
   it('clamps a stored wide layout onto a narrower grid', async () => {
-    const wide = gridForWidth(1024);
+    const wide = gridForWindow({ width: 1024, height: 768 });
     const storage = memoryStorage({
       [LAYOUT_STORAGE_KEY]: JSON.stringify({
         version: 1,
