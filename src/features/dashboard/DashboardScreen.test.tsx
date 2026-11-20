@@ -1,8 +1,9 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
 
-import { pcmPairing } from '@/features/connection/test-fixtures';
+import { PcmConnectionProvider } from '@/features/connection/connection-context';
 import type { SocketFactory, SocketHandlers } from '@/features/connection/pcm-socket-client';
+import { pcmPairing } from '@/features/connection/test-fixtures';
 
 import { DashboardScreen } from './DashboardScreen';
 import type { LayoutStorageDeps } from './layout-storage';
@@ -53,6 +54,14 @@ function makeStereoFrame(): ArrayBuffer {
   return buffer;
 }
 
+function renderScreen(props: { socketFactory?: SocketFactory; storage?: LayoutStorageDeps }) {
+  return render(
+    <PcmConnectionProvider socketFactory={props.socketFactory}>
+      <DashboardScreen storage={props.storage} />
+    </PcmConnectionProvider>,
+  );
+}
+
 async function layoutGrid(screen: { getByTestId: (id: string) => unknown }) {
   await act(async () => {
     fireEvent(screen.getByTestId('dashboard-grid') as never, 'layout', {
@@ -98,7 +107,7 @@ describe('DashboardScreen', () => {
   });
 
   it('starts unpaired with the factory dashboard in place', async () => {
-    const screen = await render(<DashboardScreen storage={memoryStorage()} />);
+    const screen = await renderScreen({ storage: memoryStorage() });
 
     expect(screen.getByText('Not paired')).toBeTruthy();
     await act(async () => {});
@@ -115,9 +124,7 @@ describe('DashboardScreen', () => {
       socketHandlers = handlers;
       return { send: jest.fn(), close: jest.fn() };
     });
-    const screen = await render(
-      <DashboardScreen socketFactory={socketFactory} storage={memoryStorage()} />,
-    );
+    const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
 
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
@@ -149,7 +156,7 @@ describe('DashboardScreen', () => {
   });
 
   it('reports an invalid pairing code and keeps the scanner open', async () => {
-    const screen = await render(<DashboardScreen storage={memoryStorage()} />);
+    const screen = await renderScreen({ storage: memoryStorage() });
 
     await fireEvent.press(screen.getByText('Scan plugin QR code'));
     await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
@@ -174,7 +181,7 @@ describe('DashboardScreen', () => {
       }),
     );
 
-    const screen = await render(<DashboardScreen storage={storage} />);
+    const screen = await renderScreen({ storage });
     await act(async () => {});
     await layoutGrid(screen);
 

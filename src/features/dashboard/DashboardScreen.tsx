@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Button,
   ScrollView,
@@ -18,17 +18,15 @@ import { BUILT_IN_THEMES, type VisualizationTheme } from '@minimetermobile/ui/di
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import type { PcmConnectionState, SocketFactory } from '@/features/connection/pcm-socket-client';
+import type { PcmConnectionState } from '@/features/connection/pcm-socket-client';
+import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScanner } from '@/features/monitoring/PairingScanner';
-import { analyseFrame, type FrameAnalysis } from '@/features/monitoring/analysis';
-import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
-import { usePcmStream } from '@/features/monitoring/use-pcm-stream';
 
 import { gridForWidth } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
-import { appendRow } from './history';
 import { ModuleBody } from './module-bodies';
 import { useDashboardLayout } from './use-dashboard-layout';
+import { useLiveAnalysis } from './use-live-analysis';
 
 const connectionLabels: Record<PcmConnectionState, string> = {
   connecting: 'Connecting',
@@ -39,23 +37,14 @@ const connectionLabels: Record<PcmConnectionState, string> = {
 };
 
 export type DashboardScreenProps = {
-  socketFactory?: SocketFactory;
   /** Injected for tests; defaults to device storage. */
   storage?: LayoutStorageDeps;
 };
 
-export function DashboardScreen({ socketFactory, storage }: DashboardScreenProps) {
-  const [analysis, setAnalysis] = useState<FrameAnalysis | null>(null);
-  const [history, setHistory] = useState<Float32Array[]>([]);
+export function DashboardScreen({ storage }: DashboardScreenProps) {
+  const stream = usePcmConnection();
+  const { analysis, history, reset: resetLiveAnalysis } = useLiveAnalysis();
 
-  const handleFrame = useCallback((frame: PcmAudioFrame) => {
-    const next = analyseFrame(frame);
-
-    setAnalysis(next);
-    setHistory((rows) => appendRow(rows, next.spectrogramRow));
-  }, []);
-
-  const stream = usePcmStream({ socketFactory, onFrame: handleFrame });
   const { width } = useWindowDimensions();
   const scheme = useColorScheme();
 
@@ -159,8 +148,7 @@ export function DashboardScreen({ socketFactory, storage }: DashboardScreenProps
               title="Disconnect and scan another code"
               onPress={() => {
                 stream.disconnect();
-                setAnalysis(null);
-                setHistory([]);
+                resetLiveAnalysis();
               }}
             />
           )}
