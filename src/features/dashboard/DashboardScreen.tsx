@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DashboardGrid,
@@ -24,7 +24,7 @@ import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
 
 import { ConnectionLight } from './ConnectionLight';
-import { fitRowsToViewport, gridForWindow, layoutRowCount } from './model';
+import { fitRowsToViewport, gridForWindow, layoutRowCount, viewportHeight } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
 import { loadOrbPosition, saveOrbPosition } from './orb-storage';
@@ -94,7 +94,18 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   );
 
   const rows = layout === null ? 1 : layoutRowCount(layout.items);
-  const availableHeight = Math.max(0, height - insets.top - insets.bottom);
+  /**
+   * Only the status bar is reserved at the top.
+   *
+   * The bottom inset (Android navigation bar, iOS home indicator) is *not*
+   * padded off: the strip it used to reserve was a full-width band of
+   * background the modules could never reach — most obvious in portrait, where
+   * the bar sits at the bottom, and invisible in landscape, where it moves to
+   * the side. The grid now runs to the physical bottom edge and the modules
+   * draw under a transparent system bar, the way the desktop app does. The
+   * settings orb still clamps above the inset so it stays tappable.
+   */
+  const availableHeight = viewportHeight({ windowHeight: height, insets: { top: insets.top } });
   const metrics = useMemo(
     () => fitRowsToViewport({ availableHeight, rows, preset: presetMetrics }),
     [availableHeight, presetMetrics, rows],
@@ -181,7 +192,9 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+      <View
+        style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}
+      >
         <ScrollView
           testID="dashboard-scroll"
           style={styles.scroll}
@@ -215,7 +228,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
             />
           )}
         </ScrollView>
-      </SafeAreaView>
+      </View>
 
       <View
         testID="connection-light-host"
@@ -305,7 +318,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  safeArea: {
+  screen: {
     flex: 1,
   },
   scroll: {
