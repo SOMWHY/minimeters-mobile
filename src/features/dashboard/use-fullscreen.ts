@@ -34,7 +34,13 @@ export function useFullscreen(enabled: boolean): void {
      * during a render commit.
      */
     const apply = (hidden: boolean): void => {
-      void NavigationBar.setVisibilityAsync(hidden ? 'hidden' : 'visible').catch(() => {});
+      void NavigationBar.setVisibilityAsync(hidden ? 'hidden' : 'visible').catch((error: unknown) => {
+        // Worth one line in dev: a silently swallowed rejection is exactly the
+        // failure mode where the toggle looks broken but nothing is reported.
+        if (__DEV__) {
+          console.warn('[fullscreen] navigation bar did not respond', String(error));
+        }
+      });
     };
 
     apply(enabled);

@@ -4,7 +4,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   useColorScheme,
   useWindowDimensions,
   View,
@@ -317,13 +316,32 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           <ThemedText type="small" themeColor="textSecondary">
             Fullscreen
           </ThemedText>
-          <Switch
+          {/*
+           * A `Pressable` pill, not RN's `Switch`: the native switch swallows
+           * touches inside this floating panel on Android, and a pill matches the
+           * theme chips right below it.
+           */}
+          <Pressable
             testID="fullscreen-toggle"
-            accessibilityLabel="Fullscreen"
             accessibilityRole="switch"
-            value={fullscreen}
-            onValueChange={setFullscreen}
-          />
+            accessibilityLabel="Fullscreen"
+            accessibilityState={{ checked: fullscreen }}
+            onPress={() => setFullscreen(!fullscreen)}
+            style={[
+              styles.switchTrack,
+              { backgroundColor: fullscreen ? theme.colors.accent : theme.colors.axis },
+            ]}
+          >
+            <View
+              style={[
+                styles.switchKnob,
+                {
+                  backgroundColor: theme.colors.surface,
+                  marginLeft: fullscreen ? 22 : 2,
+                },
+              ]}
+            />
+          </Pressable>
         </View>
 
         <View style={styles.themeRow}>
@@ -400,6 +418,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  switchTrack: {
+    width: 46,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+  },
+  switchKnob: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
   themeRow: {
     gap: 6,

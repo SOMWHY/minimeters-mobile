@@ -652,13 +652,13 @@ describe('DashboardScreen fullscreen', () => {
     const screen = await renderScreen({ storage, metrics: TOP_INSET_METRICS });
 
     await openSettingsPanel(screen);
-    await fireEvent(screen.getByTestId('fullscreen-toggle'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('fullscreen-toggle'), 'press');
 
     // The status bar goes away immediately and the choice survives a relaunch.
     await waitFor(() => expect(paddingTopOf(screen)).toBe(0));
     expect(storage.store.get(FULLSCREEN_STORAGE_KEY)).toBe('1');
 
-    await fireEvent(screen.getByTestId('fullscreen-toggle'), 'valueChange', false);
+    await fireEvent(screen.getByTestId('fullscreen-toggle'), 'press');
 
     await waitFor(() => expect(paddingTopOf(screen)).toBe(40));
     expect(storage.store.get(FULLSCREEN_STORAGE_KEY)).toBe('0');

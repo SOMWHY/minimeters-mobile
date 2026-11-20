@@ -18,6 +18,9 @@ import {
   type OrbWindow,
 } from './settings-orb';
 
+/** Width of the settings sheet, before the small-screen clamp. */
+const PANEL_WIDTH = 280;
+
 export type SettingsOrbProps = {
   readonly theme: VisualizationTheme;
   readonly window: OrbWindow;
@@ -164,19 +167,34 @@ export function SettingsOrb({
 
   const side = panelSide(placed, window);
   const tone = connectionTone(indicator);
+  const panelWidth = Math.min(PANEL_WIDTH, Math.max(0, window.width - 24));
+
+  /**
+   * Panel geometry in window coordinates, not in the orb's.
+   *
+   * The orb is a 56pt box; the panel is a 280pt sheet that opens *outside* it.
+   * On Android a child laid out beyond its parent's bounds is not hit-testable,
+   * so keeping the panel inside an orb-sized root made every control in it dead
+   * to touch (iOS has no such clipping, which is why it looked fine there). The
+   * root therefore spans the window and both boxes are placed absolutely inside
+   * it — `box-none` keeps the grid behind fully interactive.
+   */
+  const panelFrame = {
+    ...(side.vertical === 'above'
+      ? { bottom: Math.max(0, window.height - placed.y + 8) }
+      : { top: placed.y + ORB_SIZE + 8 }),
+    left: Math.max(
+      0,
+      Math.min(
+        side.horizontal === 'left' ? placed.x + ORB_SIZE - panelWidth : placed.x,
+        Math.max(0, window.width - panelWidth),
+      ),
+    ),
+    width: panelWidth,
+  };
 
   return (
-    <Animated.View
-      style={[
-        styles.root,
-        {
-          left: placed.x,
-          top: placed.y,
-          transform: drag.getTranslateTransform(),
-        },
-      ]}
-      pointerEvents="box-none"
-    >
+    <View style={[styles.root, { width: window.width, height: window.height }]} pointerEvents="box-none">
       {open && (
         <View
           testID="settings-panel"
@@ -185,19 +203,25 @@ export function SettingsOrb({
             {
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.axis,
-              maxWidth: Math.max(0, window.width - 24),
-              ...(side.vertical === 'above'
-                ? { bottom: ORB_SIZE + 8 }
-                : { top: ORB_SIZE + 8 }),
-              ...(side.horizontal === 'left' ? { right: 0 } : { left: 0 }),
             },
+            panelFrame,
           ]}
         >
           {children}
         </View>
       )}
 
-      <View {...responders} style={styles.orbHost}>
+      <Animated.View
+        style={[
+          styles.orbHost,
+          {
+            left: placed.x,
+            top: placed.y,
+            transform: drag.getTranslateTransform(),
+          },
+        ]}
+        {...responders}
+      >
         <Pressable
           testID="settings-orb"
           accessibilityRole="button"
@@ -216,20 +240,21 @@ export function SettingsOrb({
             style={[styles.orbDot, { backgroundColor: INDICATOR_COLORS[tone] }]}
           />
         </Pressable>
-      </View>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     position: 'absolute',
-    width: ORB_SIZE,
-    height: ORB_SIZE,
+    left: 0,
+    top: 0,
     zIndex: 20,
     elevation: 20,
   },
   orbHost: {
+    position: 'absolute',
     width: ORB_SIZE,
     height: ORB_SIZE,
   },
@@ -250,7 +275,6 @@ const styles = StyleSheet.create({
   },
   panel: {
     position: 'absolute',
-    width: 280,
     gap: 10,
     padding: 12,
     borderRadius: 12,
