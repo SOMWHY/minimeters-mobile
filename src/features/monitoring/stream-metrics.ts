@@ -52,6 +52,17 @@ let lastDrainAt = 0;
 const listeners = new Set<() => void>();
 
 /**
+ * Recording switch shared by the overlay and the drain loop.
+ *
+ * On in dev, and in a `--no-dev` bundle when `EXPO_PUBLIC_STREAM_METRICS=1` is
+ * set — that is the only way to read numbers from a release-like JS runtime
+ * without building a native release. Both the display and the recording must
+ * agree, otherwise a production-mode run shows an empty readout.
+ */
+export const STREAM_METRICS_ENABLED =
+  __DEV__ || process.env.EXPO_PUBLIC_STREAM_METRICS === '1';
+
+/**
  * Called once per drain that had frames. The gap is measured here so callers do
  * not have to carry a timestamp of their own.
  */

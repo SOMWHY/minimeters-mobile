@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 
-import { formatStreamMetrics, getStreamMetrics } from './stream-metrics';
+import {
+  STREAM_METRICS_ENABLED,
+  formatStreamMetrics,
+  getStreamMetrics,
+} from './stream-metrics';
 
 /**
  * Latency readout for the phone's audio pipeline.
@@ -14,18 +18,12 @@ import { formatStreamMetrics, getStreamMetrics } from './stream-metrics';
 /** Bump when the readout itself changes, so a stale bundle cannot hide. */
 const BUILD_TAG = 'fft+split';
 
-/**
- * Visible in dev, and in a `--no-dev` bundle when `EXPO_PUBLIC_STREAM_METRICS=1`
- * — performance numbers have to be readable from a production-mode JS bundle
- * too, otherwise "dev overhead" can never be ruled out.
- */
-const ENABLED = __DEV__ || process.env.EXPO_PUBLIC_STREAM_METRICS === '1';
 
 export function StreamMetricsLine({ color }: { color: string }): React.ReactNode {
   const [line, setLine] = useState(() => formatStreamMetrics(getStreamMetrics()));
 
   useEffect(() => {
-    if (!ENABLED) {
+    if (!STREAM_METRICS_ENABLED) {
       return;
     }
 
@@ -43,7 +41,7 @@ export function StreamMetricsLine({ color }: { color: string }): React.ReactNode
     };
   }, []);
 
-  if (!ENABLED) {
+  if (!STREAM_METRICS_ENABLED) {
     return null;
   }
 

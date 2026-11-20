@@ -4,6 +4,7 @@ import { parsePairingPayload, type PairingPayload } from '@/features/connection/
 import {
   getAnalyzeMs,
   recordStreamDrain,
+  STREAM_METRICS_ENABLED,
 } from '@/features/monitoring/stream-metrics';
 import {
   PcmSocketClient,
@@ -240,7 +241,12 @@ export function usePcmStream({
         setFrame(latest);
         setFrameCount(client.getReceivedFrameCount());
 
-        if (__DEV__) {
+        onFramesRef.current?.(frames);
+        onFrameRef.current?.(latest);
+
+        // Sampled after the callbacks: the analysis runs inside them, so
+        // measuring earlier would report a drain that never happened.
+        if (STREAM_METRICS_ENABLED) {
           const frameMs =
             latest.sampleRate > 0
               ? (latest.samplesPerChannel / latest.sampleRate) * 1000
@@ -257,8 +263,6 @@ export function usePcmStream({
           });
         }
 
-        onFramesRef.current?.(frames);
-        onFrameRef.current?.(latest);
         return;
       }
 
