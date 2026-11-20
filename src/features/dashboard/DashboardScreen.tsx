@@ -344,7 +344,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           </ScrollView>
         )}
 
-        <StreamMetricsLine />
+        <StreamMetricsLine color={theme.colors.text} />
       </SettingsOrb>
 
       <PairingScannerOverlay

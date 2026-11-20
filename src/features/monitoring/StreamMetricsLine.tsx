@@ -11,7 +11,7 @@ import { formatStreamMetrics, getStreamMetrics } from './stream-metrics';
  * whether a laggy meter is buffering, render cost, or the network — instead of
  * guessing. Samples at 2 Hz so the readout does not re-render what it measures.
  */
-export function StreamMetricsLine(): React.ReactNode {
+export function StreamMetricsLine({ color }: { color: string }): React.ReactNode {
   const [line, setLine] = useState(() => formatStreamMetrics(getStreamMetrics()));
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export function StreamMetricsLine(): React.ReactNode {
   }
 
   return (
-    <Text testID="stream-metrics" style={styles.line}>
+    <Text testID="stream-metrics" style={[styles.line, { color }]}>
       {line}
     </Text>
   );
@@ -41,9 +41,8 @@ export function StreamMetricsLine(): React.ReactNode {
 
 const styles = StyleSheet.create({
   line: {
-    marginTop: 8,
+    marginTop: 10,
     fontFamily: 'SpaceMono',
-    fontSize: 10,
-    opacity: 0.6,
+    fontSize: 11,
   },
 });
