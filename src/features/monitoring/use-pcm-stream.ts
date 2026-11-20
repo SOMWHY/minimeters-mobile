@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { parsePairingPayload, type PairingPayload } from '@/features/connection/pairing';
+import {
+  buildManualPairing,
+  parsePairingPayload,
+  type PairingPayload,
+} from '@/features/connection/pairing';
 import {
   PcmSocketClient,
   type PcmConnectionState,
@@ -57,6 +61,15 @@ export type PcmStream = {
   readonly startScan: () => void;
   readonly cancelScan: () => void;
   readonly handleQrScanned: (data: string) => void;
+  /**
+   * Pairs from the address and token typed off the desktop window.
+   *
+   * Same destination as a scan; it exists because the camera is not always
+   * available or allowed, and because a platform without QR support still
+   * prints both values next to the code.
+   */
+  readonly pairManually: (address: string, token: string) => void;
+  readonly clearScanError: () => void;
   readonly disconnect: () => void;
 };
 
@@ -375,6 +388,30 @@ export function usePcmStream({
     [beginPairing],
   );
 
+  const pairManually = useCallback(
+    (address: string, token: string) => {
+      const result = buildManualPairing(address, token);
+
+      if (!result.ok) {
+        setScanError(
+          result.reason === 'invalid_token'
+            ? 'Enter the pairing token shown next to the QR code.'
+            : 'Enter the desktop address, for example 192.168.1.20:8422.',
+        );
+        return;
+      }
+
+      setScanError(null);
+      setIsScanning(false);
+      beginPairing(result.payload);
+    },
+    [beginPairing],
+  );
+
+  const clearScanError = useCallback(() => {
+    setScanError(null);
+  }, []);
+
   const disconnect = useCallback(() => {
     pairedRef.current = false;
     clearRetryTimer();
@@ -429,6 +466,8 @@ export function usePcmStream({
     startScan,
     cancelScan,
     handleQrScanned,
+    pairManually,
+    clearScanError,
     disconnect,
   };
 }

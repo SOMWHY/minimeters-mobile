@@ -272,6 +272,37 @@ describe('DashboardScreen', () => {
     screen.unmount();
   });
 
+  it('pairs from a manually typed address and token', async () => {
+    const socketFactory = jest.fn(() => ({ send: jest.fn(), close: jest.fn() }));
+    const screen = await renderScreen({ socketFactory: socketFactory as never, storage: memoryStorage() });
+
+    await openSettingsPanel(screen);
+    await fireEvent.press(screen.getByText('Enter address manually'));
+    await fireEvent.changeText(screen.getByTestId('manual-address') as never, '192.168.1.20:8422');
+    await fireEvent.changeText(
+      screen.getByTestId('manual-token') as never,
+      pcmPairing.token,
+    );
+    await fireEvent.press(screen.getByText('Connect'));
+
+    expect(socketFactory).toHaveBeenCalledWith('ws://192.168.1.20:8422/ws', expect.any(Object));
+  });
+
+  it('explains a manual pairing field it cannot use', async () => {
+    const socketFactory = jest.fn(() => ({ send: jest.fn(), close: jest.fn() }));
+    const screen = await renderScreen({ socketFactory: socketFactory as never, storage: memoryStorage() });
+
+    await openSettingsPanel(screen);
+    await fireEvent.press(screen.getByText('Enter address manually'));
+    await fireEvent.changeText(screen.getByTestId('manual-address') as never, '192.168.1.20:8422');
+    await fireEvent.press(screen.getByText('Connect'));
+
+    expect(
+      screen.getByText('Enter the pairing token shown next to the QR code.'),
+    ).toBeTruthy();
+    expect(socketFactory).not.toHaveBeenCalled();
+  });
+
   it('reports an invalid pairing code and keeps the scanner open', async () => {
     const screen = await renderScreen({ storage: memoryStorage() });
 

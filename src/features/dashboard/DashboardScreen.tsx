@@ -4,6 +4,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   useColorScheme,
   useWindowDimensions,
   View,
@@ -165,6 +166,20 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     defaultOrbPosition({ window: { width, height }, insets: orbInsets }),
   );
   const [panelOpen, setPanelOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualAddress, setManualAddress] = useState('');
+  const [manualToken, setManualToken] = useState('');
+  const toggleManualEntry = useCallback(() => {
+    setManualOpen((open) => {
+      // Opening starts from a clean slate; a stale error from a previous attempt
+      // would otherwise read as if this one had already failed.
+      if (!open) {
+        stream.clearScanError();
+      }
+
+      return !open;
+    });
+  }, [stream]);
   useEffect(() => {
     let active = true;
 
@@ -369,7 +384,58 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           </View>
         </View>
 
-        {!stream.isPaired && <Button title="Scan plugin QR code" onPress={stream.startScan} />}
+        {!stream.isPaired && (
+          <>
+            <Button title="Scan plugin QR code" onPress={stream.startScan} />
+            <Button
+              title={manualOpen ? 'Cancel manual entry' : 'Enter address manually'}
+              onPress={toggleManualEntry}
+            />
+            {manualOpen && (
+              <View style={styles.manualForm}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Both values are printed next to the QR code in the desktop app.
+                </ThemedText>
+                <TextInput
+                  testID="manual-address"
+                  value={manualAddress}
+                  onChangeText={setManualAddress}
+                  placeholder="192.168.1.20:8422"
+                  placeholderTextColor={theme.colors.axis}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  inputMode="url"
+                  style={[
+                    styles.input,
+                    { color: theme.colors.text, borderColor: theme.colors.axis },
+                  ]}
+                />
+                <TextInput
+                  testID="manual-token"
+                  value={manualToken}
+                  onChangeText={setManualToken}
+                  placeholder="Pairing token"
+                  placeholderTextColor={theme.colors.axis}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[
+                    styles.input,
+                    { color: theme.colors.text, borderColor: theme.colors.axis },
+                  ]}
+                />
+                {stream.scanError !== null && (
+                  <ThemedText testID="manual-error" type="small" themeColor="textSecondary">
+                    {stream.scanError}
+                  </ThemedText>
+                )}
+                <Button
+                  title="Connect"
+                  onPress={() => stream.pairManually(manualAddress, manualToken)}
+                />
+              </View>
+            )}
+          </>
+        )}
 
         {stream.isPaired && (
           <>
@@ -449,5 +515,15 @@ const styles = StyleSheet.create({
   },
   tray: {
     maxHeight: 140,
+  },
+  manualForm: {
+    gap: 8,
+  },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
   },
 });
