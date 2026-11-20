@@ -53,7 +53,10 @@
     "preset": "jest-expo",
     "moduleNameMapper": {
       "\\.(css)$": "<rootDir>/test/cssMock.js"
-    }
+    },
+    "setupFiles": [
+      "<rootDir>/test/setup.js"
+    ]
   },
   "private": true
 }
