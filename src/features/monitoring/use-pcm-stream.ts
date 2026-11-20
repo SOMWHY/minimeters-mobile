@@ -249,6 +249,7 @@ export function usePcmStream({
             frames: frames.length,
             pending,
             dropped: Math.max(0, pending - frames.length),
+            msgGapMs: client.getMessageGapMs(),
           });
         }
 

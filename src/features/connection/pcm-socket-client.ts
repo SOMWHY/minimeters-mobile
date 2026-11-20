@@ -91,6 +91,9 @@ export class PcmSocketClient {
   private state: PcmConnectionState = 'disconnected';
   private frames: PcmAudioFrame[] = [];
   private bufferedSamples = 0;
+  /** Wall-clock arrival of the previous binary message, for cadence diagnosis. */
+  private lastMessageAt = 0;
+  private messageGapMs = 0;
   private lastDeviceToken: string | null = null;
   /** Long-lived credential presented on every handshake, if the server issued one. */
   private deviceToken: string | null = null;
@@ -201,6 +204,17 @@ export class PcmSocketClient {
     return this.frames.length;
   }
 
+  /**
+   * Interval between the last two binary messages, ms.
+   *
+   * This is the network's cadence, independent of how often we poll: if it is
+   * large while our poll is only 33 ms, the batching happens on the server (or
+   * in the driver), not in our loop.
+   */
+  getMessageGapMs(): number {
+    return this.messageGapMs;
+  }
+
   /** Device token issued by the server on the current or a previous pairing. */
   getDeviceToken(): string | null {
     return this.lastDeviceToken;
@@ -290,6 +304,10 @@ export class PcmSocketClient {
       this.callbacks.onProtocolError?.(result.reason);
       return;
     }
+
+    const now = Date.now();
+    this.messageGapMs = this.lastMessageAt === 0 ? 0 : now - this.lastMessageAt;
+    this.lastMessageAt = now;
 
     this.pushFrame(result.frame);
     this.receivedFrameCount += 1;

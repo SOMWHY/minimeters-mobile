@@ -30,6 +30,8 @@ export type StreamMetrics = {
   readonly pending: number;
   /** Frames the drain cap or the buffer cap threw away. */
   readonly dropped: number;
+  /** Interval between the last two binary messages from the server, ms. */
+  readonly msgGapMs: number;
 };
 
 const EMPTY: StreamMetrics = {
@@ -39,6 +41,7 @@ const EMPTY: StreamMetrics = {
   frames: 0,
   pending: 0,
   dropped: 0,
+  msgGapMs: 0,
 };
 
 let current: StreamMetrics = EMPTY;
@@ -55,6 +58,7 @@ export function recordStreamDrain(next: {
   readonly frames: number;
   readonly pending: number;
   readonly dropped: number;
+  readonly msgGapMs: number;
 }): void {
   const now = Date.now();
   const gapMs = lastDrainAt === 0 ? 0 : now - lastDrainAt;
@@ -103,5 +107,6 @@ export function formatStreamMetrics(metrics: StreamMetrics): string {
     `work: ${drain} ms per pass`,
     `arrive: every ${gap} ms`,
     `${metrics.frames}/${metrics.pending} frames, ${metrics.dropped} dropped`,
+    `wire: every ${Math.round(metrics.msgGapMs)} ms`,
   ].join("\n");
 }
