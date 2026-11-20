@@ -7,7 +7,10 @@ import type { FrameAnalysis } from '@/features/monitoring/analysis';
 import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
 import { createAnalysisEngine } from '@/features/monitoring/engine';
 
-import { setAnalyzeMs } from '@/features/monitoring/stream-metrics';
+import {
+  STREAM_METRICS_ENABLED,
+  setAnalyzeMs,
+} from '@/features/monitoring/stream-metrics';
 
 import { appendRow } from './history';
 import { appendScopeFrame } from './scope-history';
@@ -119,7 +122,7 @@ export function useLiveAnalysis(): LiveAnalysis {
           return;
         }
 
-        if (__DEV__) {
+        if (STREAM_METRICS_ENABLED) {
           setAnalyzeMs(Date.now() - analyzeStartedAt);
         }
 

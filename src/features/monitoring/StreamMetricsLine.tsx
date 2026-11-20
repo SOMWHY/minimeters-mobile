@@ -16,7 +16,7 @@ import {
  * what it measures.
  */
 /** Bump when the readout itself changes, so a stale bundle cannot hide. */
-const BUILD_TAG = 'fft+split';
+const BUILD_TAG = 'metrics-prod';
 
 
 export function StreamMetricsLine({ color }: { color: string }): React.ReactNode {

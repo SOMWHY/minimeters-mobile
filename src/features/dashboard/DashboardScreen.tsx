@@ -36,6 +36,7 @@ import {
 } from './settings-orb';
 import { SettingsOrb } from './SettingsOrb';
 import { StreamMetricsLine } from '@/features/monitoring/StreamMetricsLine';
+import { STREAM_METRICS_ENABLED } from '@/features/monitoring/stream-metrics';
 import { useDashboardLayout } from './use-dashboard-layout';
 import { useLiveAnalysis } from './use-live-analysis';
 
@@ -347,7 +348,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
       </SettingsOrb>
 
-      {( __DEV__ || process.env.EXPO_PUBLIC_STREAM_METRICS === '1') && (
+      {STREAM_METRICS_ENABLED && (
         <View style={styles.devOverlay} pointerEvents="none">
           <StreamMetricsLine color="#FFFFFF" />
         </View>
