@@ -344,8 +344,13 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           </ScrollView>
         )}
 
-        <StreamMetricsLine color={theme.colors.text} />
       </SettingsOrb>
+
+      {__DEV__ && (
+        <View style={styles.devOverlay} pointerEvents="none">
+          <StreamMetricsLine color="#FFFFFF" />
+        </View>
+      )}
 
       <PairingScannerOverlay
         visible={stream.isScanning}
@@ -358,6 +363,17 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  devOverlay: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    zIndex: 30,
+    elevation: 30,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+  },
   container: {
     flex: 1,
   },
