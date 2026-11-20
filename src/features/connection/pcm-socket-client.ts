@@ -53,6 +53,7 @@ export class PcmSocketClient {
   private state: PcmConnectionState = 'disconnected';
   private latestFrame: PcmAudioFrame | null = null;
   private receivedFrameCount = 0;
+  private lastErrorCode: string | null = null;
 
   constructor(
     private readonly pairing: PairingPayload,
@@ -69,6 +70,7 @@ export class PcmSocketClient {
     this.authenticated = false;
     this.latestFrame = null;
     this.receivedFrameCount = 0;
+    this.lastErrorCode = null;
     this.setState('connecting');
 
     let socket: SocketTransport;
@@ -128,6 +130,32 @@ export class PcmSocketClient {
     return this.receivedFrameCount;
   }
 
+  /**
+   * Why the last attempt failed, as the server or the protocol named it.
+   *
+   * Retry policy lives above this client, but only the client knows whether a
+   * failure was a dropped socket or a rejected pairing token.
+   */
+  getLastErrorCode(): string | null {
+    return this.lastErrorCode;
+  }
+
+  /**
+   * Drop a socket that stopped delivering audio without reporting an error.
+   *
+   * Emits no state change: the caller immediately reconnects, and a stray
+   * `disconnected` would schedule a second, competing attempt.
+   */
+  forceReconnect(): void {
+    const socket = this.socket;
+    this.generation += 1;
+    this.socket = null;
+    this.authenticated = false;
+    this.latestFrame = null;
+    this.receivedFrameCount = 0;
+    socket?.close();
+  }
+
   private handleMessage(generation: number, socket: SocketTransport, data: unknown): void {
     if (!this.isCurrent(generation, socket)) {
       return;
@@ -145,12 +173,14 @@ export class PcmSocketClient {
     }
 
     if (!this.authenticated) {
+      this.lastErrorCode ??= 'binary_before_authentication';
       this.callbacks.onProtocolError?.('binary_before_authentication');
       return;
     }
 
     const result = decodePcmFrame(data);
     if (!result.ok) {
+      this.lastErrorCode ??= result.reason;
       this.callbacks.onProtocolError?.(result.reason);
       return;
     }
@@ -182,7 +212,7 @@ export class PcmSocketClient {
     if (message.type === 'error') {
       const code = typeof message.code === 'string' ? message.code : 'server_error';
       const detail = typeof message.message === 'string' ? message.message : code;
-      this.fail(generation, socket, detail);
+      this.fail(generation, socket, detail, code);
       return;
     }
 
@@ -214,12 +244,23 @@ export class PcmSocketClient {
     }
   }
 
-  private fail(generation: number, socket: SocketTransport, message: string): void {
+  private fail(
+    generation: number,
+    socket: SocketTransport,
+    message: string,
+    code?: string,
+  ): void {
     if (!this.isCurrent(generation, socket)) {
       return;
     }
 
     this.authenticated = false;
+    this.lastErrorCode = code ?? this.lastErrorCode ?? message;
+    // Clear the socket first so the retry path can reconnect immediately and a
+    // late close event cannot restart the state machine.
+    this.socket = null;
+    this.latestFrame = null;
+    this.receivedFrameCount = 0;
     this.setState('error');
     this.callbacks.onError?.(message);
     socket.close();
