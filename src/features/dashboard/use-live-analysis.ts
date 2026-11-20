@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { usePcmConnection } from '@/features/connection/connection-context';
-import { analyseFrame, type FrameAnalysis } from '@/features/monitoring/analysis';
+import type { FrameAnalysis } from '@/features/monitoring/analysis';
+import { createAnalysisEngine } from '@/features/monitoring/engine';
 
 import { appendRow } from './history';
 
@@ -16,7 +17,9 @@ export type LiveAnalysis = {
  * Analysis of the newest frame plus the rolling spectrogram history.
  *
  * State is updated from the stream's frame subscription — an external callback —
- * so this never sets state during an effect body or during render.
+ * so this never sets state during an effect body or during render. The engine
+ * keeps the meters between frames, so it lives in a ref and is never touched
+ * during render.
  */
 export function useLiveAnalysis(): LiveAnalysis {
   const { subscribe } = usePcmConnection();
@@ -24,12 +27,16 @@ export function useLiveAnalysis(): LiveAnalysis {
     analysis: null,
     history: [],
   });
+  const engineRef = useRef<ReturnType<typeof createAnalysisEngine> | null>(null);
 
   useEffect(
     () =>
       subscribe((frame) => {
+        engineRef.current ??= createAnalysisEngine();
+        const engine = engineRef.current;
+
         setLive((previous) => {
-          const analysis = analyseFrame(frame);
+          const analysis = engine.push(frame);
 
           return {
             analysis,
@@ -40,7 +47,10 @@ export function useLiveAnalysis(): LiveAnalysis {
     [subscribe],
   );
 
-  const reset = useCallback(() => setLive({ analysis: null, history: [] }), []);
+  const reset = useCallback(() => {
+    engineRef.current?.reset();
+    setLive({ analysis: null, history: [] });
+  }, []);
 
   return { ...live, reset };
 }

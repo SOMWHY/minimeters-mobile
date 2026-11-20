@@ -22,7 +22,10 @@ export interface FrameAnalysis {
   readonly peak: number;
   /** Linear RMS across all channels. */
   readonly rms: number;
-  /** RMS expressed in dBFS; `ANALYSIS_FLOOR_DB` when silent. */
+  /**
+   * Loudness. `analyseFrame` can only offer unweighted dBFS here; the engine
+   * replaces it with K-weighted momentary LUFS.
+   */
   readonly lufs: number;
   /** Per-channel levels, one entry per channel in the incoming frame. */
   readonly levels: readonly ChannelLevels[];

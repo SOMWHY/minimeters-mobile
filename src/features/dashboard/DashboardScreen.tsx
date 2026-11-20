@@ -31,8 +31,6 @@ import { useLiveAnalysis } from './use-live-analysis';
 
 const themeIds = Object.keys(BUILT_IN_THEMES);
 
-const waitingModules = ['Spectrum', 'VU', 'Loudness', 'Spectrogram'];
-
 const connectionLabels: Record<PcmConnectionState, string> = {
   connecting: 'Connecting',
   authenticating: 'Authenticating',
@@ -87,7 +85,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
               <ThemedText type="small" themeColor="textSecondary">
                 {stream.isPaired
                   ? `${connectionLabels[stream.status]} · ${stream.frameCount} frames${
-                      analysis ? ` · ${analysis.lufs.toFixed(1)} dBFS RMS` : ''
+                      analysis ? ` · ${analysis.lufs.toFixed(1)} LUFS` : ''
                     }`
                   : 'Not paired'}
               </ThemedText>
@@ -171,7 +169,8 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           )}
 
           <ThemedText type="small" themeColor="textSecondary">
-            {`${waitingModules.join(', ')} wait for a frame-based plugin feed.`}
+            Spectrum, VU, loudness and the spectrogram are derived on the phone from the raw
+            PCM stream — the plugin only sends audio.
           </ThemedText>
 
           {editing && layout !== null && (

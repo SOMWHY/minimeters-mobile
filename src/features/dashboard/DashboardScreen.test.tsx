@@ -149,7 +149,7 @@ describe('DashboardScreen', () => {
       jest.advanceTimersByTime(100);
     });
 
-    expect(screen.getByText(/^Connected · 1 frames · -/)).toBeTruthy();
+    expect(screen.getByText(/^Connected · 1 frames · -?\d+\.\d LUFS$/)).toBeTruthy();
     await layoutGrid(screen);
     expect(screen.getByText('module:waveform')).toBeTruthy();
 
