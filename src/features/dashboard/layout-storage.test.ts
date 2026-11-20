@@ -3,7 +3,10 @@ import type { DashboardItem, DashboardLayout, GridPlacement } from '@minimetermo
 import { defaultLayout, gridForWidth } from './model';
 import {
   LAYOUT_STORAGE_KEY,
+  THEME_STORAGE_KEY,
   clearLayout,
+  loadTheme,
+  saveTheme,
   loadLayout,
   saveLayout,
   type LayoutStorageDeps,
@@ -188,5 +191,48 @@ describe('clearLayout', () => {
 
     expect(storage.store.has(LAYOUT_STORAGE_KEY)).toBe(false);
     expect(keys(await loadLayout(storage, phone.config))).toEqual(keys(defaultLayout()));
+  });
+});
+
+describe('theme persistence', () => {
+  const known = ['midnight', 'ice', 'ember'] as const;
+
+  it('round-trips a known theme id', async () => {
+    const storage = memoryStorage();
+
+    await saveTheme(storage, 'ember');
+
+    expect(storage.store.has(THEME_STORAGE_KEY)).toBe(true);
+    await expect(loadTheme(storage, known)).resolves.toBe('ember');
+  });
+
+  it('falls back to the first theme when nothing is stored', async () => {
+    await expect(loadTheme(memoryStorage(), known)).resolves.toBe('midnight');
+  });
+
+  it('rejects an unknown theme id', async () => {
+    const storage = memoryStorage({ [THEME_STORAGE_KEY]: 'chartreuse' });
+
+    await expect(loadTheme(storage, known)).resolves.toBe('midnight');
+  });
+
+  it('rejects a corrupt payload and a failing disk', async () => {
+    const corrupt = memoryStorage({ [THEME_STORAGE_KEY]: '{not json' });
+    await expect(loadTheme(corrupt, known)).resolves.toBe('midnight');
+
+    const failing: LayoutStorageDeps = {
+      getItem: async () => {
+        throw new Error('disk on fire');
+      },
+      setItem: async () => {
+        throw new Error('disk on fire');
+      },
+      removeItem: async () => {
+        throw new Error('disk on fire');
+      },
+    };
+
+    await expect(loadTheme(failing, known)).resolves.toBe('midnight');
+    await expect(saveTheme(failing, 'ice')).resolves.toBeUndefined();
   });
 });

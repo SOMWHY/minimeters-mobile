@@ -183,3 +183,39 @@ export async function clearLayout(deps: LayoutStorageDeps): Promise<void> {
     // Same rationale as `saveLayout`.
   }
 }
+
+/** Storage key for the chosen visualization theme. */
+export const THEME_STORAGE_KEY = 'minimeters.dashboard.theme.v1';
+
+/**
+ * Read the stored theme id, falling back to `fallbackId`.
+ *
+ * Never rejects and never returns an id the theme registry does not know, so a
+ * stale or hand-edited value cannot blank the dashboard.
+ */
+export async function loadTheme<Id extends string>(
+  deps: LayoutStorageDeps,
+  known: readonly Id[],
+  fallbackId: Id = known[0],
+): Promise<Id> {
+  try {
+    const stored = await deps.getItem(THEME_STORAGE_KEY);
+
+    if (stored !== null && (known as readonly string[]).includes(stored)) {
+      return stored as Id;
+    }
+  } catch {
+    // Fall through to the default, same rationale as `loadLayout`.
+  }
+
+  return fallbackId;
+}
+
+/** Persist the chosen theme id. Storage failures are swallowed. */
+export async function saveTheme(deps: LayoutStorageDeps, themeId: string): Promise<void> {
+  try {
+    await deps.setItem(THEME_STORAGE_KEY, themeId);
+  } catch {
+    // Same rationale as `saveLayout`.
+  }
+}

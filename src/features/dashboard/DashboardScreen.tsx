@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Button,
+  Pressable,
   ScrollView,
   StyleSheet,
   useColorScheme,
@@ -28,6 +29,10 @@ import { ModuleBody } from './module-bodies';
 import { useDashboardLayout } from './use-dashboard-layout';
 import { useLiveAnalysis } from './use-live-analysis';
 
+const themeIds = Object.keys(BUILT_IN_THEMES);
+
+const waitingModules = ['Spectrum', 'VU', 'Loudness', 'Spectrogram'];
+
 const connectionLabels: Record<PcmConnectionState, string> = {
   connecting: 'Connecting',
   authenticating: 'Authenticating',
@@ -50,11 +55,18 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
   const grid = useMemo(() => gridForWidth(width), [width]);
   const { config, metrics } = grid;
-  const { layout, setLayout, resetLayout } = useDashboardLayout(config, storage);
+  const defaultThemeId = scheme === 'dark' ? 'midnight' : 'ice';
+  const { layout, themeId, setLayout, setThemeId, resetLayout } = useDashboardLayout(
+    config,
+    storage,
+    themeIds,
+    defaultThemeId,
+  );
 
   const [editing, setEditing] = useState(false);
 
-  const theme: VisualizationTheme = scheme === 'dark' ? BUILT_IN_THEMES.midnight : BUILT_IN_THEMES.ice;
+  const theme: VisualizationTheme =
+    BUILT_IN_THEMES[themeId as keyof typeof BUILT_IN_THEMES] ?? BUILT_IN_THEMES.midnight;
   const hidden = layout ? hiddenItems(layout.items) : [];
 
   const handleRestore = (id: string) => {
@@ -109,6 +121,31 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
             <ThemedText accessibilityRole="alert">Protocol error: {stream.protocolError}</ThemedText>
           )}
 
+          <View style={styles.toolbar}>
+            <ThemedText type="small" themeColor="textSecondary">
+              Theme
+            </ThemedText>
+            <View style={styles.themeChips}>
+              {themeIds.map((id) => {
+                const selected = id === themeId;
+
+                return (
+                  <Pressable
+                    key={id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => setThemeId(id)}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                  >
+                    <ThemedText type="small" themeColor={selected ? 'text' : 'textSecondary'}>
+                      {BUILT_IN_THEMES[id as keyof typeof BUILT_IN_THEMES].name}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
           {layout === null ? (
             <ThemedText type="small">Loading dashboard…</ThemedText>
           ) : (
@@ -132,6 +169,10 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
               )}
             />
           )}
+
+          <ThemedText type="small" themeColor="textSecondary">
+            {`${waitingModules.join(', ')} wait for a frame-based plugin feed.`}
+          </ThemedText>
 
           {editing && layout !== null && (
             <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
@@ -164,6 +205,25 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  themeChips: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  chip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(128,128,128,0.6)',
+  },
+  chipSelected: {
+    backgroundColor: 'rgba(128,128,128,0.25)',
   },
   content: {
     width: '100%',

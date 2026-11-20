@@ -5,15 +5,22 @@ import type { DashboardLayout, GridConfig } from '@minimetermobile/ui/dist/dashb
 import {
   clearLayout,
   loadLayout,
+  loadTheme,
   saveLayout,
+  saveTheme,
   type LayoutStorageDeps,
 } from './layout-storage';
 import { defaultLayout, restoreFactoryLayout } from './model';
 
+/** Stable empty default, so callers that pass no registry do not re-run the effect. */
+const NO_THEMES: readonly string[] = [];
+
 export type DashboardLayoutController = {
   /** `null` until the stored layout has been read; render a skeleton until then. */
   readonly layout: DashboardLayout | null;
+  readonly themeId: string;
   readonly setLayout: (next: DashboardLayout) => void;
+  readonly setThemeId: (next: string) => void;
   readonly resetLayout: () => void;
   readonly forgetLayout: () => void;
 };
@@ -27,8 +34,11 @@ export type DashboardLayoutController = {
 export function useDashboardLayout(
   config: GridConfig,
   storage: LayoutStorageDeps = AsyncStorage,
+  themeIds: readonly string[] = NO_THEMES,
+  defaultThemeId: string = themeIds[0] ?? '',
 ): DashboardLayoutController {
   const [layout, setLayoutState] = useState<DashboardLayout | null>(null);
+  const [themeId, setThemeIdState] = useState(defaultThemeId);
   const loadedRef = useRef(false);
 
   useEffect(() => {
@@ -47,6 +57,28 @@ export function useDashboardLayout(
       active = false;
     };
   }, [config, storage]);
+
+  useEffect(() => {
+    let active = true;
+
+    void loadTheme(storage, themeIds, defaultThemeId).then((stored) => {
+      if (active) {
+        setThemeIdState(stored);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [defaultThemeId, storage, themeIds]);
+
+  const setThemeId = useCallback(
+    (next: string) => {
+      setThemeIdState(next);
+      void saveTheme(storage, next);
+    },
+    [storage],
+  );
 
   const setLayout = useCallback(
     (next: DashboardLayout) => {
@@ -71,7 +103,7 @@ export function useDashboardLayout(
   }, [storage]);
 
   return useMemo(
-    () => ({ layout, setLayout, resetLayout, forgetLayout }),
-    [forgetLayout, layout, resetLayout, setLayout],
+    () => ({ layout, themeId, setLayout, setThemeId, resetLayout, forgetLayout }),
+    [forgetLayout, layout, resetLayout, setLayout, setThemeId, themeId],
   );
 }

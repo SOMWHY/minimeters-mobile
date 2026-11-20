@@ -1,6 +1,7 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
 
+import { THEME_STORAGE_KEY } from './layout-storage';
 import { PcmConnectionProvider } from '@/features/connection/connection-context';
 import type { SocketFactory, SocketHandlers } from '@/features/connection/pcm-socket-client';
 import { pcmPairing } from '@/features/connection/test-fixtures';
@@ -165,6 +166,19 @@ describe('DashboardScreen', () => {
 
     expect(screen.getByText('This is not a valid MiniMeters pairing code.')).toBeTruthy();
     expect(screen.getByTestId('camera-view')).toBeTruthy();
+
+    screen.unmount();
+  });
+
+  it('switches the theme and persists the choice', async () => {
+    const storage = memoryStorage();
+    const screen = await renderScreen({ storage });
+    await act(async () => {});
+
+    await fireEvent.press(screen.getByText('Ember'));
+    await act(async () => {});
+
+    expect(storage.store.get(THEME_STORAGE_KEY)).toBe('ember');
 
     screen.unmount();
   });
