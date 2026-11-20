@@ -173,9 +173,11 @@ const FACTORY_ITEMS: readonly FactoryItem[] = [
   { kind: 'waveform', col: 0, row: 0, colSpan: 2, rowSpan: 1 },
   { kind: 'vectorscope', col: 0, row: 1, colSpan: 1, rowSpan: 1 },
   { kind: 'oscilloscope', col: 1, row: 1, colSpan: 1, rowSpan: 1 },
-  { kind: 'spectrum', col: 0, row: 2, colSpan: 2, rowSpan: 1 },
-  { kind: 'vu', col: 0, row: 3, colSpan: 1, rowSpan: 1 },
-  { kind: 'loudness', col: 1, row: 3, colSpan: 1, rowSpan: 1 },
+  { kind: 'vu', col: 0, row: 2, colSpan: 1, rowSpan: 1 },
+  { kind: 'loudness', col: 1, row: 2, colSpan: 1, rowSpan: 1 },
+  // The spectrum sits directly on top of the spectrogram: the two time/frequency
+  // views read as one block, instead of the meters splitting them apart.
+  { kind: 'spectrum', col: 0, row: 3, colSpan: 2, rowSpan: 1 },
   { kind: 'spectrogram', col: 0, row: 4, colSpan: 2, rowSpan: 2 },
 ];
 

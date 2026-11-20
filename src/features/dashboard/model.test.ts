@@ -95,6 +95,18 @@ describe('DEFAULT_DASHBOARD_ITEMS', () => {
   it('fits the phone grid without overlapping', () => {
     expectNoOverlap(DEFAULT_DASHBOARD_ITEMS, GRID_PRESETS.phone.columns);
   });
+
+  it('stacks the spectrum directly on top of the spectrogram', () => {
+    const byKind = new Map(DEFAULT_DASHBOARD_ITEMS.map((item) => [item.kind, item.placement]));
+
+    // The two time/frequency views belong together: the meters sit above them
+    // instead of splitting the pair with a row of their own.
+    expect(byKind.get('spectrum')!.row + byKind.get('spectrum')!.rowSpan).toBe(
+      byKind.get('spectrogram')!.row,
+    );
+    expect(byKind.get('spectrum')!.colSpan).toBe(2);
+    expect(byKind.get('vu')!.row).toBeLessThan(byKind.get('spectrum')!.row);
+  });
 });
 
 describe('defaultLayout', () => {
