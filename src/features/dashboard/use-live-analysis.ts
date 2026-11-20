@@ -6,6 +6,8 @@ import { usePcmConnection } from '@/features/connection/connection-context';
 import type { FrameAnalysis } from '@/features/monitoring/analysis';
 import { createAnalysisEngine } from '@/features/monitoring/engine';
 
+import { setAnalyzeMs } from '@/features/monitoring/stream-metrics';
+
 import { appendRow } from './history';
 import { appendScopeFrame } from './scope-history';
 import { toScopeBlock } from './scope-block';
@@ -91,6 +93,7 @@ export function useLiveAnalysis(): LiveAnalysis {
         }
 
         let latest: FrameAnalysis | null = null;
+        const analyzeStartedAt = Date.now();
 
         for (const frame of frames) {
           latest = engine.push(frame);
@@ -103,6 +106,10 @@ export function useLiveAnalysis(): LiveAnalysis {
 
         if (!latest) {
           return;
+        }
+
+        if (__DEV__) {
+          setAnalyzeMs(Date.now() - analyzeStartedAt);
         }
 
         setMeter(latest);

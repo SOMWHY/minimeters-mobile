@@ -32,6 +32,8 @@ export type StreamMetrics = {
   readonly dropped: number;
   /** Interval between the last two binary messages from the server, ms. */
   readonly msgGapMs: number;
+  /** Wall time spent analysing the drained frames (FFT, loudness, history). */
+  readonly analyzeMs: number;
 };
 
 const EMPTY: StreamMetrics = {
@@ -42,6 +44,7 @@ const EMPTY: StreamMetrics = {
   pending: 0,
   dropped: 0,
   msgGapMs: 0,
+  analyzeMs: 0,
 };
 
 let current: StreamMetrics = EMPTY;
@@ -59,6 +62,7 @@ export function recordStreamDrain(next: {
   readonly pending: number;
   readonly dropped: number;
   readonly msgGapMs: number;
+  readonly analyzeMs: number;
 }): void {
   const now = Date.now();
   const gapMs = lastDrainAt === 0 ? 0 : now - lastDrainAt;
@@ -108,5 +112,17 @@ export function formatStreamMetrics(metrics: StreamMetrics): string {
     `arrive: every ${gap} ms`,
     `${metrics.frames}/${metrics.pending} frames, ${metrics.dropped} dropped`,
     `wire: every ${Math.round(metrics.msgGapMs)} ms`,
+    `analyze: ${metrics.analyzeMs} ms`,
   ].join("\n");
+}
+
+let lastAnalyzeMs = 0;
+
+/** Reported by the analysis hook; read by the next drain for the readout. */
+export function setAnalyzeMs(ms: number): void {
+  lastAnalyzeMs = ms;
+}
+
+export function getAnalyzeMs(): number {
+  return lastAnalyzeMs;
 }

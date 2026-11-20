@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { parsePairingPayload, type PairingPayload } from '@/features/connection/pairing';
-import { recordStreamDrain } from '@/features/monitoring/stream-metrics';
+import {
+  getAnalyzeMs,
+  recordStreamDrain,
+} from '@/features/monitoring/stream-metrics';
 import {
   PcmSocketClient,
   type PcmConnectionState,
@@ -250,6 +253,7 @@ export function usePcmStream({
             pending,
             dropped: Math.max(0, pending - frames.length),
             msgGapMs: client.getMessageGapMs(),
+            analyzeMs: getAnalyzeMs(),
           });
         }
 
