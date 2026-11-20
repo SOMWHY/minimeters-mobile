@@ -38,6 +38,14 @@ export type PcmStream = {
   /** Increments for every successful authentication, so consumers can reset per session. */
   readonly sessionId: number;
   readonly reconnecting: boolean;
+  /**
+   * Whether the stored credentials carry a device token.
+   *
+   * A server that never issued one is an older build: it can only accept the
+   * short-lived QR token, so a rejection there is not the phone's fault and the
+   * UI must say so instead of asking for yet another scan.
+   */
+  readonly hasDeviceToken: boolean;
   /** 1-based number of the retry attempt in flight, or 0 when stable. */
   readonly retryAttempt: number;
   /** The server rejected the pairing token; the last frame stays on screen. */
@@ -103,6 +111,7 @@ export function usePcmStream({
   const [frameCount, setFrameCount] = useState(0);
   const [sessionId, setSessionId] = useState(0);
   const [reconnecting, setReconnecting] = useState(false);
+  const [hasDeviceToken, setHasDeviceToken] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reauthRequired, setReauthRequired] = useState(false);
   const [fatalError, setFatalError] = useState<FatalErrorKind | null>(null);
@@ -260,6 +269,7 @@ export function usePcmStream({
       setProtocolError(null);
       setFatalError(null);
       setReauthRequired(false);
+      setHasDeviceToken(credentials.deviceToken != null);
       setFrame(null);
       setFrameCount(0);
       setIsScanning(false);
@@ -308,6 +318,10 @@ export function usePcmStream({
             }
           },
           onAuthenticated: ({ deviceToken }) => {
+            if (mountedRef.current) {
+              setHasDeviceToken((deviceToken ?? credentials.deviceToken) != null);
+            }
+
             // Persisting the device token is what makes the next launch (and
             // every later reconnect) independent of the QR code's lifetime.
             void savePairing(
@@ -372,6 +386,7 @@ export function usePcmStream({
     setRetryAttempt(0);
     setReconnecting(false);
     setReauthRequired(false);
+    setHasDeviceToken(false);
     setFatalError(null);
     setIsPaired(false);
     setIsScanning(false);
@@ -402,6 +417,7 @@ export function usePcmStream({
     frameCount,
     sessionId,
     reconnecting,
+    hasDeviceToken,
     retryAttempt,
     reauthRequired,
     fatalError,

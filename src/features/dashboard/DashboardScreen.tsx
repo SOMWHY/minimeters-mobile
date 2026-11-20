@@ -19,26 +19,17 @@ import { BUILT_IN_THEMES, type VisualizationTheme } from '@minimetermobile/ui/di
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import type { PcmConnectionState } from '@/features/connection/pcm-socket-client';
 import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
 
+import { ConnectionLight } from './ConnectionLight';
 import { gridForWindow } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
-import { loudnessReadout } from './module-values';
 import { useDashboardLayout } from './use-dashboard-layout';
 import { useLiveAnalysis } from './use-live-analysis';
 
 const themeIds = Object.keys(BUILT_IN_THEMES);
-
-const connectionLabels: Record<PcmConnectionState, string> = {
-  connecting: 'Connecting',
-  authenticating: 'Authenticating',
-  connected: 'Connected',
-  disconnected: 'Disconnected',
-  error: 'Connection error',
-};
 
 const fatalMessages = {
   protocol: 'The plugin and the phone disagree about the audio format.',
@@ -47,6 +38,17 @@ const fatalMessages = {
 
 /** Shown when the server rejects the token; the last frame stays on screen. */
 const REAUTH_MESSAGE = 'The pairing code expired. Scan the plugin QR code again.';
+
+/**
+ * A rejection on a pairing that never stored a device token.
+ *
+ * Usually that is an older server build, which can only accept the short-lived
+ * QR token — but it is also what a just-upgraded server looks like to a phone
+ * that has not re-paired yet, so the wording points at a re-scan first and only
+ * blames the build if that does not help.
+ */
+const REAUTH_WITHOUT_DEVICE_TOKEN_MESSAGE =
+  'The pairing code expired and this phone has no device token stored — scan the QR code again; if it keeps failing, update the server build.';
 
 export type DashboardScreenProps = {
   /** Injected for tests; defaults to device storage. */
@@ -93,7 +95,9 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   };
 
   const banner = stream.reauthRequired
-    ? REAUTH_MESSAGE
+    ? stream.hasDeviceToken
+      ? REAUTH_MESSAGE
+      : REAUTH_WITHOUT_DEVICE_TOKEN_MESSAGE
     : stream.fatalError
       ? fatalMessages[stream.fatalError]
       : stream.reconnecting
@@ -113,19 +117,6 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           contentContainerStyle={styles.content}
           scrollEnabled={!dragging}
         >
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <ThemedText type="subtitle">Dashboard</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {stream.isPaired
-                  ? `${connectionLabels[stream.status]} · ${stream.frameCount} frames${
-                      analysis ? ` · ${loudnessReadout(analysis)}` : ''
-                    }`
-                  : 'Not paired'}
-              </ThemedText>
-            </View>
-          </View>
-
           <View style={styles.toolbar}>
             <ThemedText type="small" themeColor="textSecondary">
               Theme
@@ -149,6 +140,14 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
                 );
               })}
             </View>
+            <View style={styles.toolbarSpacer} />
+            <ConnectionLight
+              status={stream.status}
+              reauthRequired={stream.reauthRequired}
+              fatalError={stream.fatalError}
+              connectionError={stream.connectionError}
+              protocolError={stream.protocolError}
+            />
           </View>
 
           {layout === null ? (
@@ -253,6 +252,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  toolbarSpacer: {
+    flex: 1,
+  },
   chip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -269,16 +271,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     padding: 16,
     gap: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  headerText: {
-    flexShrink: 1,
-    gap: 2,
   },
   tray: {
     maxHeight: 180,

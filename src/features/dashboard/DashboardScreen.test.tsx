@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionStatus, useCameraPermissions } from 'expo-camera';
 
 import { THEME_STORAGE_KEY } from './layout-storage';
+import { INDICATOR_COLORS } from './connection-indicator';
 import { PcmConnectionProvider } from '@/features/connection/connection-context';
 import type { SocketFactory, SocketHandlers } from '@/features/connection/pcm-socket-client';
 import { pcmPairing } from '@/features/connection/test-fixtures';
@@ -114,10 +115,16 @@ describe('DashboardScreen', () => {
     jest.restoreAllMocks();
   });
 
-  it('starts unpaired with the factory dashboard in place', async () => {
+  it('starts unpaired with the factory dashboard in place and the light idle', async () => {
     const screen = await renderScreen({ storage: memoryStorage() });
 
-    expect(screen.getByText('Not paired')).toBeTruthy();
+    // The header text is gone: one light carries the whole connection state.
+    expect(screen.queryByText('Dashboard')).toBeNull();
+    expect(screen.queryByText('Not paired')).toBeNull();
+    expect(screen.getByTestId('connection-light')).toHaveStyle({
+      backgroundColor: INDICATOR_COLORS.idle,
+    });
+    expect(screen.getByTestId('connection-light').props.accessibilityLabel).toBe('Not connected');
     await act(async () => {});
     await layoutGrid(screen);
     expect(screen.getByText('module:waveform')).toBeTruthy();
@@ -139,7 +146,8 @@ describe('DashboardScreen', () => {
       data: JSON.stringify(pcmPairing),
     });
     expect(socketFactory).toHaveBeenCalledWith('ws://192.168.1.20:8422/ws', expect.any(Object));
-    expect(screen.getByText('Connecting · 0 frames')).toBeTruthy();
+    // Pairing starts the socket but is not yet a live feed.
+    expect(screen.getByTestId('connection-light').props.accessibilityLabel).toBe('Not connected');
 
     if (!socketHandlers) {
       throw new Error('Expected the socket factory to capture handlers');
@@ -156,11 +164,10 @@ describe('DashboardScreen', () => {
       jest.advanceTimersByTime(100);
     });
 
-    expect(
-      screen.getByText(
-        /^Connected · 1 frames · INT -?\d+\.\d · M -?\d+\.\d · S -?\d+\.\d$/,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByTestId('connection-light')).toHaveStyle({
+      backgroundColor: INDICATOR_COLORS.live,
+    });
+    expect(screen.getByTestId('connection-light').props.accessibilityLabel).toBe('Connected');
     await layoutGrid(screen);
     expect(screen.getByText('module:waveform')).toBeTruthy();
 
@@ -413,7 +420,15 @@ describe('DashboardScreen', () => {
       ),
     );
 
-    expect(screen.getByText('The pairing code expired. Scan the plugin QR code again.')).toBeTruthy();
+    // Nothing is stored to prove the server issues tokens, so the hint points at
+    // a re-scan first and only blames the build if that keeps failing.
+    expect(screen.getByText(/no device token stored/)).toBeTruthy();
+    expect(screen.getByTestId('connection-light').props.accessibilityLabel).toBe(
+      'Connection error',
+    );
+    expect(screen.getByTestId('connection-light')).toHaveStyle({
+      backgroundColor: INDICATOR_COLORS.error,
+    });
 
     // A rejected token is a slow re-auth, not a dead end: the phone keeps the
     // last frame and retries so that a fresh scan recovers on its own.
@@ -426,6 +441,42 @@ describe('DashboardScreen', () => {
       jest.advanceTimersByTime(2_000);
     });
     expect(socketFactory).toHaveBeenCalledTimes(2);
+
+    screen.unmount();
+  });
+
+  it('asks for a re-scan when the server had issued a device token', async () => {
+    const handlers: SocketHandlers[] = [];
+    const socketFactory: SocketFactory = jest.fn((_url, socketHandlers) => {
+      handlers.push(socketHandlers);
+      return { send: jest.fn(), close: jest.fn() };
+    });
+    const screen = await renderScreen({ socketFactory, storage: memoryStorage() });
+
+    await fireEvent.press(screen.getByText('Scan plugin QR code'));
+    await fireEvent(screen.getByTestId('camera-view'), 'barcodeScanned', {
+      data: JSON.stringify(pcmPairing),
+    });
+    await act(async () => handlers[0]?.onOpen());
+    await act(async () =>
+      handlers[0]?.onMessage(
+        JSON.stringify({
+          type: 'authenticated',
+          version: 1,
+          sampleFormat: 'f32le',
+          deviceToken: 'issued-device-token',
+        }),
+      ),
+    );
+
+    await act(async () =>
+      handlers[0]?.onMessage(
+        JSON.stringify({ type: 'error', code: 'invalid_token', message: 'Pairing code expired' }),
+      ),
+    );
+
+    // The server does issue tokens, so this really is an expired code.
+    expect(screen.getByText('The pairing code expired. Scan the plugin QR code again.')).toBeTruthy();
 
     screen.unmount();
   });
