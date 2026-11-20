@@ -24,7 +24,7 @@ import {
 import type { PcmAudioFrame } from './pcm-frame';
 
 /** How often the screen drains the client's frame buffer. */
-export const STREAM_REFRESH_MS = 100;
+export const STREAM_REFRESH_MS = 33;
 
 /** Why automatic recovery gave up, for the UI to explain. */
 export type FatalErrorKind = 'protocol' | 'unreachable';

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import type { VisualizationTheme } from '@minimetermobile/ui';
 
 import {
@@ -69,13 +69,29 @@ export function SettingsOrb({
   children,
 }: SettingsOrbProps) {
   const [position, setPosition] = useState(initialPosition);
-  /** Where the finger landed when the drag began; `null` between gestures. */
-  const [start, setStart] = useState<{
+  /**
+   * Where the finger landed when the drag began; `null` between gestures.
+   *
+   * A ref rather than state: a move copies it into the drag translation, which
+   * lives on the native driver, so a drag never re-renders the panel either.
+   */
+  const startRef = useRef<{
     readonly x: number;
     readonly y: number;
     readonly pageX: number;
     readonly pageY: number;
   } | null>(null);
+  /**
+   * Drag offset, committed to `position` on release.
+   *
+   * Kept off the render path on purpose: the panel is a full settings sheet, and
+   * re-rendering it at every touch event is what made dragging feel heavy.
+   */
+  const [drag] = useState(
+    () => new Animated.ValueXY({ x: 0, y: 0 }),
+  );
+  /** Last clamped position the drag drew, so release commits what was shown. */
+  const previewRef = useRef<OrbPosition | null>(null);
 
   // A rotation or a restored position can leave the orb outside the new window.
   // Derived rather than stored so no effect has to write state back.
@@ -94,43 +110,71 @@ export function SettingsOrb({
     onResponderGrant: (event: GestureEvent) => {
       const pointer = pointerOf(event);
 
-      setStart({ x: placed.x, y: placed.y, pageX: pointer.x, pageY: pointer.y });
+      startRef.current = {
+        x: placed.x,
+        y: placed.y,
+        pageX: pointer.x,
+        pageY: pointer.y,
+      };
     },
     onResponderMove: (event: GestureEvent) => {
+      const start = startRef.current;
+
       if (start === null) {
         return;
       }
 
       const pointer = pointerOf(event);
+      const next = clampOrbPosition({
+        position: {
+          x: start.x + pointer.x - start.pageX,
+          y: start.y + pointer.y - start.pageY,
+        },
+        window,
+        insets,
+      });
 
-      setPosition(
-        clampOrbPosition({
-          position: {
-            x: start.x + pointer.x - start.pageX,
-            y: start.y + pointer.y - start.pageY,
-          },
-          window,
-          insets,
-        }),
-      );
+      // Show the clamped result, not the raw finger delta: the orb stops at the
+      // edge instead of sliding out and snapping back on release.
+      previewRef.current = next;
+      drag.setValue({ x: next.x - start.x, y: next.y - start.y });
     },
     onResponderRelease: () => {
+      const start = startRef.current;
+
       if (start === null) {
         return;
       }
 
-      setStart(null);
-      onDragEnd(placed);
+      startRef.current = null;
+
+      const released = previewRef.current ?? { x: start.x, y: start.y };
+
+      previewRef.current = null;
+      drag.setValue({ x: 0, y: 0 });
+      setPosition(released);
+      onDragEnd(released);
     },
-    onResponderTerminate: () => setStart(null),
+    onResponderTerminate: () => {
+      startRef.current = null;
+      previewRef.current = null;
+      drag.setValue({ x: 0, y: 0 });
+    },
   };
 
   const side = panelSide(placed, window);
   const tone = connectionTone(indicator);
 
   return (
-    <View
-      style={[styles.root, { left: placed.x, top: placed.y }]}
+    <Animated.View
+      style={[
+        styles.root,
+        {
+          left: placed.x,
+          top: placed.y,
+          transform: drag.getTranslateTransform(),
+        },
+      ]}
       pointerEvents="box-none"
     >
       {open && (
@@ -173,7 +217,7 @@ export function SettingsOrb({
           />
         </Pressable>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

@@ -14,11 +14,19 @@ import { STREAM_REFRESH_MS } from '@/features/monitoring/use-pcm-stream';
  */
 
 /** How much audio history the plot shows, in seconds. */
-export const SPECTROGRAM_HISTORY_SECONDS = 5;
+export const SPECTROGRAM_HISTORY_SECONDS = 4;
 
 /** Rows kept for the scrolling plot: one per poll, so 5 s at a 100 ms cadence. */
-export const SPECTROGRAM_HISTORY_ROWS = Math.round(
-  (SPECTROGRAM_HISTORY_SECONDS * 1000) / STREAM_REFRESH_MS,
+/**
+ * Ceiling on the row count. The raster is one pixel column per row and is
+ * rebuilt on the JS thread, so the history stops growing at this width; the
+ * visible window is `HISTORY_ROW_MS`-per-row up to that cap.
+ */
+export const SPECTROGRAM_MAX_ROWS = 120;
+
+export const SPECTROGRAM_HISTORY_ROWS = Math.min(
+  SPECTROGRAM_MAX_ROWS,
+  Math.round((SPECTROGRAM_HISTORY_SECONDS * 1000) / STREAM_REFRESH_MS),
 );
 
 export function appendRow(

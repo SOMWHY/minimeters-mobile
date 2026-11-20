@@ -1,4 +1,8 @@
-import { ANALYSIS_FLOOR_DB, type FrameAnalysis } from '@/features/monitoring/analysis';
+import {
+  ANALYSIS_FLOOR_DB,
+  SPECTRUM_DISPLAY_FLOOR_DB,
+  type FrameAnalysis,
+} from '@/features/monitoring/analysis';
 import { LOUDNESS_GATE_LUFS } from '@/features/monitoring/loudness';
 
 /**
@@ -19,8 +23,31 @@ export const VU_BAR_DB_RANGE = [-60, 0] as const;
  */
 export const LOUDNESS_BAR_DB_RANGE = [LOUDNESS_GATE_LUFS, 0] as const;
 
+/**
+ * Bins to draw, or `null` when the spectrum has never seen energy.
+ *
+ * A muted input leaves every bin on the -100 dBFS floor, which draws 160 full-
+ * width bars sitting exactly on zero — a picture that reads as a broken meter
+ * rather than as silence.
+ */
+export function spectrumBins(
+  analysis: FrameAnalysis | null,
+): Float32Array | null {
+  if (!analysis) {
+    return null;
+  }
+
+  for (let index = 0; index < analysis.bins.length; index += 1) {
+    if (analysis.bins[index] > SPECTRUM_DISPLAY_FLOOR_DB) {
+      return analysis.bins;
+    }
+  }
+
+  return null;
+}
+
 /** dB window the spectrum/spectrogram span. */
-export const SPECTRUM_DB_RANGE = [ANALYSIS_FLOOR_DB, 0] as const;
+export const SPECTRUM_DB_RANGE = [SPECTRUM_DISPLAY_FLOOR_DB, 0] as const;
 
 export type NumericRange = readonly [number, number];
 

@@ -6,10 +6,19 @@ import { LOUDNESS_GATE_LUFS } from './loudness';
 export const ANALYSIS_FFT_SIZE = 1024;
 
 /** Bins the spectrum and spectrogram modules consume. */
-export const ANALYSIS_BIN_COUNT = 64;
+export const ANALYSIS_BIN_COUNT = 160;
 
 /** Floor for dB conversions, so silence maps to a finite floor instead of -Infinity. */
 export const ANALYSIS_FLOOR_DB = -100;
+
+/**
+ * Bottom of the *display* window for the spectrum and spectrogram.
+ *
+ * Metering keeps the -100 dBFS floor (a gate and a display window answer
+ * different questions), but a plot that spans 100 dB spends most of its height
+ * on a range no listener can hear: at -80 dBFS and below the bar reads empty.
+ */
+export const SPECTRUM_DISPLAY_FLOOR_DB = -80;
 
 export interface ChannelLevels {
   /** Linear peak magnitude, 0..1 for full scale. */
@@ -194,7 +203,10 @@ function combineSpectra(channels: readonly Float32Array[]): { bins: Float32Array
     }
 
     bins[bin] = loudest;
-    spectrogramRow[bin] = Math.min(1, Math.max(0, (loudest - ANALYSIS_FLOOR_DB) / -ANALYSIS_FLOOR_DB));
+    spectrogramRow[bin] = Math.min(
+      1,
+      Math.max(0, (loudest - SPECTRUM_DISPLAY_FLOOR_DB) / -SPECTRUM_DISPLAY_FLOOR_DB),
+    );
   }
 
   return { bins, spectrogramRow };

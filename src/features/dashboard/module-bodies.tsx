@@ -35,8 +35,10 @@ import {
 } from './readout';
 import {
   LOUDNESS_BAR_DB_RANGE,
+  loudnessReadout,
   loudnessValues,
   SPECTRUM_DB_RANGE,
+  spectrumBins,
   vuLevels,
 } from './module-values';
 
@@ -121,7 +123,7 @@ function ModuleBodyBase({
       content = (
         <SpectrumModule
           theme={theme}
-          bins={analysis?.bins ?? null}
+          bins={spectrumBins(analysis)}
           dbRange={SPECTRUM_DB_RANGE}
           height={height}
         />
@@ -157,7 +159,14 @@ function ModuleBodyBase({
       }
       break;
     case 'vu':
-      content = <VuModule theme={theme} data={analysis ? vuLevels(analysis) : null} height={height} />;
+      content = (
+        <VuModule
+          theme={theme}
+          data={analysis ? vuLevels(analysis) : null}
+          readout={loudnessReadout(analysis)}
+          height={height}
+        />
+      );
       break;
     case 'loudness':
       content = (
