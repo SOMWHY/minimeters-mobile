@@ -86,7 +86,14 @@ export function useStreamMetrics(): StreamMetrics {
 
 /** One compact line for the settings panel. */
 export function formatStreamMetrics(metrics: StreamMetrics): string {
-  return `queue ${Math.round(metrics.queueMs)}ms · drain ${metrics.drainMs.toFixed(
-    1,
-  )}ms · gap ${Math.round(metrics.gapMs)}ms · ${metrics.frames}f`;
+  const queue = Math.round(metrics.queueMs);
+  const drain = metrics.drainMs.toFixed(1);
+  const gap = Math.round(metrics.gapMs);
+
+  return [
+    `lag: ${queue} ms waiting`,
+    `work: ${drain} ms per pass`,
+    `arrive: every ${gap} ms`,
+    `${metrics.frames} frame(s) per pass`,
+  ].join("\n");
 }

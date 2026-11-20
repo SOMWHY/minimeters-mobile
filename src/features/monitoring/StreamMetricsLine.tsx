@@ -20,8 +20,13 @@ export function StreamMetricsLine({ color }: { color: string }): React.ReactNode
     }
 
     const id = setInterval(() => {
-      setLine(formatStreamMetrics(getStreamMetrics()));
-    }, 500);
+      const metrics = getStreamMetrics();
+
+      setLine(formatStreamMetrics(metrics));
+      // Also on the Metro terminal so the numbers can be copied verbatim
+      // instead of read off a phone screen.
+      console.log(`[stream] ${JSON.stringify(metrics)}`);
+    }, 1000);
 
     return () => {
       clearInterval(id);
