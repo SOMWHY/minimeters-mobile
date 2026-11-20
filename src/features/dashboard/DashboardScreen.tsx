@@ -341,9 +341,10 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
         {editing && hidden.length > 0 && (
           <ScrollView testID="hidden-tray" style={styles.tray} nestedScrollEnabled>
             <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
-            <StreamMetricsLine />
           </ScrollView>
         )}
+
+        <StreamMetricsLine />
       </SettingsOrb>
 
       <PairingScannerOverlay
