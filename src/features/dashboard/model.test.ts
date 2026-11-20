@@ -8,8 +8,12 @@ import {
   DASHBOARD_SHORT_SIDE_THRESHOLD,
   DEFAULT_DASHBOARD_ITEMS,
   defaultLayout,
+  fitRowsToViewport,
   fitToConfig,
   gridForWindow,
+  layoutRowCount,
+  MAX_ROW_HEIGHT,
+  MIN_ROW_HEIGHT,
   restoreFactoryLayout,
 } from './model';
 
@@ -141,5 +145,73 @@ describe('restoreFactoryLayout', () => {
       DEFAULT_DASHBOARD_ITEMS.map((item) => placementKey(item.placement)),
     );
     expect(restored.items.every((item) => item.visible)).toBe(true);
+  });
+});
+
+describe('layoutRowCount', () => {
+  it('counts the rows a layout occupies, not the items', () => {
+    expect(layoutRowCount(DEFAULT_DASHBOARD_ITEMS)).toBe(6);
+  });
+
+  it('ignores hidden items', () => {
+    const items = DEFAULT_DASHBOARD_ITEMS.map((item) =>
+      item.kind === 'spectrogram' ? { ...item, visible: false } : item,
+    );
+
+    expect(layoutRowCount(items)).toBe(4);
+  });
+
+  it('never reports fewer than one row', () => {
+    expect(layoutRowCount([])).toBe(1);
+  });
+});
+
+describe('fitRowsToViewport', () => {
+  const preset = GRID_PRESETS.phone;
+
+  /** The grid's own height for a fitted metrics: padding, rows, and the gaps. */
+  function gridHeight(metrics: { rowHeight: number; gap: number; padding: number }, rows: number) {
+    return metrics.padding * 2 + rows * metrics.rowHeight + metrics.gap * (rows - 1);
+  }
+
+  it('makes the grid exactly as tall as the viewport', () => {
+    const availableHeight = 742;
+    const rows = 6;
+    const metrics = fitRowsToViewport({ availableHeight, rows, preset });
+
+    expect(gridHeight(metrics, rows)).toBeCloseTo(availableHeight, 5);
+    // Whatever it takes to fill the screen, the columns/gap/padding are untouched.
+    expect(metrics.columns).toBe(preset.columns);
+    expect(metrics.gap).toBe(preset.gap);
+    expect(metrics.padding).toBe(preset.padding);
+  });
+
+  it('keeps cards readable on a tall screen', () => {
+    // A single-row layout on a tablet-sized viewport would otherwise be enormous.
+    expect(fitRowsToViewport({ availableHeight: 2_000, rows: 1, preset }).rowHeight).toBe(
+      MAX_ROW_HEIGHT,
+    );
+  });
+
+  it('falls back to the minimum height when the layout cannot fit', () => {
+    // Twelve rows on a short screen: scroll rather than squeeze to nothing.
+    expect(fitRowsToViewport({ availableHeight: 400, rows: 12, preset }).rowHeight).toBe(
+      MIN_ROW_HEIGHT,
+    );
+  });
+
+  it('rounds to one decimal so the layout does not drift by fractions', () => {
+    const { rowHeight } = fitRowsToViewport({ availableHeight: 700, rows: 7, preset });
+
+    expect(rowHeight).toBe(Math.round(rowHeight * 10) / 10);
+  });
+
+  it('treats a zero-row or unmeasured viewport as one row at the floor', () => {
+    expect(fitRowsToViewport({ availableHeight: 0, rows: 0, preset }).rowHeight).toBe(
+      MIN_ROW_HEIGHT,
+    );
+    expect(fitRowsToViewport({ availableHeight: Number.NaN, rows: 3, preset }).rowHeight).toBe(
+      MIN_ROW_HEIGHT,
+    );
   });
 });
