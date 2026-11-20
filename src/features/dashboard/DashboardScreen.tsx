@@ -26,6 +26,7 @@ import { PairingScanner } from '@/features/monitoring/PairingScanner';
 import { gridForWidth } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
+import { loudnessReadout } from './module-values';
 import { useDashboardLayout } from './use-dashboard-layout';
 import { useLiveAnalysis } from './use-live-analysis';
 
@@ -85,7 +86,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
               <ThemedText type="small" themeColor="textSecondary">
                 {stream.isPaired
                   ? `${connectionLabels[stream.status]} · ${stream.frameCount} frames${
-                      analysis ? ` · ${analysis.lufs.toFixed(1)} LUFS` : ''
+                      analysis ? ` · ${loudnessReadout(analysis)}` : ''
                     }`
                   : 'Not paired'}
               </ThemedText>

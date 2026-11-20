@@ -51,7 +51,13 @@ export function createAnalysisEngine(config: BallisticsConfig = DEFAULT_BALLISTI
 
     const levels = vu.push(base.levels, frameDurationMs(frame));
 
-    return { ...base, levels, lufs: loudness.value() };
+    return {
+      ...base,
+      levels,
+      lufs: loudness.integrated(),
+      momentaryLufs: loudness.value(),
+      shortTermLufs: loudness.shortTerm(),
+    };
   }
 
   return { push, reset };

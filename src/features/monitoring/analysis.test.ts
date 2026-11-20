@@ -4,6 +4,7 @@ import {
   analyseFrame,
   silentAnalysis,
 } from './analysis';
+import { LOUDNESS_GATE_LUFS } from './loudness';
 import type { PcmAudioFrame } from './pcm-frame';
 
 function frameOf({
@@ -142,7 +143,7 @@ describe('silentAnalysis', () => {
 
     expect(analysis.peak).toBe(0);
     expect(analysis.rms).toBe(0);
-    expect(analysis.lufs).toBe(ANALYSIS_FLOOR_DB);
+    expect(analysis.lufs).toBe(LOUDNESS_GATE_LUFS);
     expect(Array.from(analysis.bins).every((value) => value === ANALYSIS_FLOOR_DB)).toBe(true);
     expect(Array.from(analysis.spectrogramRow).every((value) => value === 0)).toBe(true);
   });
@@ -150,7 +151,7 @@ describe('silentAnalysis', () => {
   it('reports digital silence from a real frame the same way', () => {
     const analysis = analyseFrame(frameOf({ amplitude: 0, sine: false }));
 
-    expect(analysis.lufs).toBe(ANALYSIS_FLOOR_DB);
+    expect(analysis.lufs).toBe(LOUDNESS_GATE_LUFS);
     expect(analysis.peak).toBe(0);
   });
 });

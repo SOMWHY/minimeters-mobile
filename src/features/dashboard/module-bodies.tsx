@@ -14,12 +14,15 @@ import {
 } from '@minimetermobile/ui';
 
 import type { FrameAnalysis } from '@/features/monitoring/analysis';
-import { ANALYSIS_FLOOR_DB } from '@/features/monitoring/analysis';
 import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
 
 import { SPECTROGRAM_HISTORY_ROWS } from './history';
-
-const DB_RANGE = [ANALYSIS_FLOOR_DB, 0] as const;
+import {
+  LOUDNESS_BAR_DB_RANGE,
+  loudnessValues,
+  SPECTRUM_DB_RANGE,
+  vuLevels,
+} from './module-values';
 
 function toBlock(frame: PcmAudioFrame | null): PcmBlock | null {
   if (!frame) {
@@ -30,31 +33,6 @@ function toBlock(frame: PcmAudioFrame | null): PcmBlock | null {
     samples: frame.samples,
     channels: frame.channels,
     samplesPerChannel: frame.samplesPerChannel,
-  };
-}
-
-function toDb(linear: number): number {
-  return linear > 0 ? Math.max(ANALYSIS_FLOOR_DB, 20 * Math.log10(linear)) : ANALYSIS_FLOOR_DB;
-}
-
-/** VU bars are normalized 0..1: RMS drives the bar, peak drives the marker. */
-function vuLevels(analysis: FrameAnalysis) {
-  const left = analysis.levels[0] ?? { peak: 0, rms: 0 };
-  const right = analysis.levels[1] ?? left;
-
-  return {
-    left: Math.min(1, left.rms),
-    right: Math.min(1, right.rms),
-    leftPeak: Math.min(1, left.peak),
-    rightPeak: Math.min(1, right.peak),
-  };
-}
-
-function loudnessValues(analysis: FrameAnalysis) {
-  return {
-    peak: toDb(analysis.peak),
-    rms: toDb(analysis.rms),
-    lufs: analysis.lufs,
   };
 }
 
@@ -99,7 +77,7 @@ export function ModuleBody({
         <SpectrumModule
           theme={theme}
           bins={analysis?.bins ?? null}
-          dbRange={DB_RANGE}
+          dbRange={SPECTRUM_DB_RANGE}
           height={height}
         />
       );
@@ -110,7 +88,7 @@ export function ModuleBody({
         <LoudnessModule
           theme={theme}
           data={analysis ? loudnessValues(analysis) : null}
-          dbRange={DB_RANGE}
+          dbRange={LOUDNESS_BAR_DB_RANGE}
           height={height}
         />
       );

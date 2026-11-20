@@ -22,6 +22,15 @@ export const LOUDNESS_GATE_LUFS = -70;
 /** Momentary window length. */
 export const MOMENTARY_WINDOW_MS = 400;
 
+/** Short-term window length (EBU R128). */
+export const SHORT_TERM_WINDOW_MS = 3000;
+
+/** Relative gate distance for integrated loudness, in LU. */
+export const INTEGRATED_RELATIVE_GATE_LU = 10;
+
+/** Bounded block history for the integrated value (400 ms each ≈ 24 minutes). */
+const MAX_INTEGRATED_BLOCKS = 3600;
+
 /**
  * K-weighting coefficients for any sample rate.
  *
@@ -99,31 +108,85 @@ export type LoudnessMeter = {
   readonly push: (channels: readonly Float32Array[]) => void;
   /** Momentary loudness in LUFS, `LOUDNESS_GATE_LUFS` until there is signal. */
   readonly value: () => number;
+  /** Short-term loudness (3 s window). */
+  readonly shortTerm: () => number;
+  /**
+   * Integrated (programme) loudness per BS.1770-4 gating.
+   *
+   * This is the number people mean by "the LUFS" of a track: 400 ms blocks,
+   * absolute -70 LUFS gate, then a relative gate 10 LU below the loud blocks so
+   * a quiet intro cannot drag the average down.
+   */
+  readonly integrated: () => number;
   readonly reset: () => void;
 };
+
+/** Convert weighted mean square to LUFS. */
+function toLufs(meanSquare: number): number {
+  if (!(meanSquare > 0)) {
+    return LOUDNESS_GATE_LUFS;
+  }
+
+  return Math.max(LOUDNESS_GATE_LUFS, -0.691 + 10 * Math.log10(meanSquare));
+}
 
 /**
  * Rolling-window loudness meter.
  *
- * The window is trimmed by sample count rather than wall-clock time, so the
+ * The windows are trimmed by sample count rather than wall-clock time, so the
  * reading stays sample-accurate even if the plugin's frames arrive irregularly.
+ * Blocks for the integrated value are non-overlapping, which is what a live
+ * meter can afford: 75 % overlap only sharpens the gate, not the reading.
  */
-export function createLoudnessMeter(
-  sampleRate: number,
-  windowMs: number = MOMENTARY_WINDOW_MS,
-): LoudnessMeter {
+export function createLoudnessMeter(sampleRate: number): LoudnessMeter {
   const rate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
-  const windowSamples = Math.max(1, Math.round((windowMs * rate) / 1000));
+  const samplesFor = (windowMs: number): number => Math.max(1, Math.round((windowMs * rate) / 1000));
+  const momentarySamples = samplesFor(MOMENTARY_WINDOW_MS);
+  const shortTermSamples = samplesFor(SHORT_TERM_WINDOW_MS);
+  const blockSamples = momentarySamples;
   const filters = kWeightingCoefficients(rate);
 
   let entries: WindowEntry[] = [];
   let states: { shelf: FilterState; highPass: FilterState }[] = [];
   let totalSamples = 0;
 
+  let blockSumSquares = 0;
+  let blockCount = 0;
+  let blocks: number[] = [];
+
   function reset(): void {
     entries = [];
     states = [];
     totalSamples = 0;
+    blockSumSquares = 0;
+    blockCount = 0;
+    blocks = [];
+  }
+
+  function accumulateIntegrated(sumSquares: number, count: number): void {
+    let remaining = sumSquares;
+    let pending = count;
+
+    while (pending > 0) {
+      const room = blockSamples - blockCount;
+      const take = Math.min(room, pending);
+      const share = pending > 0 ? take / pending : 0;
+
+      blockSumSquares += remaining * share;
+      blockCount += take;
+      remaining -= remaining * share;
+      pending -= take;
+
+      if (blockCount >= blockSamples) {
+        blocks.push(blockSumSquares / blockCount);
+        blockSumSquares = 0;
+        blockCount = 0;
+
+        if (blocks.length > MAX_INTEGRATED_BLOCKS) {
+          blocks.shift();
+        }
+      }
+    }
   }
 
   function push(channels: readonly Float32Array[]): void {
@@ -158,47 +221,74 @@ export function createLoudnessMeter(
 
     entries.push({ sumSquares, count });
     totalSamples += count;
+    accumulateIntegrated(sumSquares, count);
 
     // Drop whole slices first, then trim the oldest partially so the window
-    // stays exactly 400 ms instead of quantising to the frame length.
-    while (entries.length > 0 && totalSamples - entries[0].count >= windowSamples) {
+    // stays exact instead of quantising to the frame length. The buffer keeps
+    // the longest window; the shorter ones are summed from the tail.
+    while (entries.length > 0 && totalSamples - entries[0].count >= shortTermSamples) {
       totalSamples -= entries[0].count;
       entries.shift();
     }
 
-    if (entries.length > 1 && totalSamples > windowSamples) {
-      const excess = totalSamples - windowSamples;
+    if (entries.length > 1 && totalSamples > shortTermSamples) {
+      const excess = totalSamples - shortTermSamples;
       const head = entries[0];
 
       entries[0] = {
         sumSquares: head.sumSquares * (1 - excess / head.count),
         count: head.count - excess,
       };
-      totalSamples = windowSamples;
+      totalSamples = shortTermSamples;
     }
   }
 
-  function value(): number {
-    if (totalSamples === 0) {
-      return LOUDNESS_GATE_LUFS;
-    }
-
+  /** Mean square over the newest `windowSamples`, walking back from the tail. */
+  function windowMeanSquare(windowSamples: number): number {
+    let counted = 0;
     let sumSquares = 0;
 
-    for (const entry of entries) {
-      sumSquares += entry.sumSquares;
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      const take = Math.min(entry.count, windowSamples - counted);
+
+      if (take <= 0) {
+        break;
+      }
+
+      sumSquares += entry.sumSquares * (take / entry.count);
+      counted += take;
     }
 
-    const meanSquare = sumSquares / totalSamples;
+    return counted > 0 ? sumSquares / counted : 0;
+  }
 
-    if (!(meanSquare > 0)) {
+  function momentary(): number {
+    return toLufs(windowMeanSquare(momentarySamples));
+  }
+
+  function shortTerm(): number {
+    return toLufs(windowMeanSquare(shortTermSamples));
+  }
+
+  function integrated(): number {
+    const aboveAbsolute = blocks.filter((energy) => toLufs(energy) > LOUDNESS_GATE_LUFS);
+
+    if (aboveAbsolute.length === 0) {
       return LOUDNESS_GATE_LUFS;
     }
 
-    const lufs = -0.691 + 10 * Math.log10(meanSquare);
+    const absoluteMean =
+      aboveAbsolute.reduce((total, energy) => total + energy, 0) / aboveAbsolute.length;
+    const relativeThreshold = toLufs(absoluteMean) - INTEGRATED_RELATIVE_GATE_LU;
+    const gated = aboveAbsolute.filter((energy) => toLufs(energy) > relativeThreshold);
 
-    return Math.max(LOUDNESS_GATE_LUFS, lufs);
+    if (gated.length === 0) {
+      return LOUDNESS_GATE_LUFS;
+    }
+
+    return toLufs(gated.reduce((total, energy) => total + energy, 0) / gated.length);
   }
 
-  return { push, value, reset };
+  return { push, value: momentary, shortTerm, integrated, reset };
 }

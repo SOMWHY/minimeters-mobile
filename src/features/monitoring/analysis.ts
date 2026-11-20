@@ -1,5 +1,6 @@
 import type { PcmAudioFrame } from './pcm-frame';
 import { fftMagnitudes, hannWindow } from './fft';
+import { LOUDNESS_GATE_LUFS } from './loudness';
 
 /** FFT window length; 1024 at 48 kHz is ~21 ms — one or two server frames. */
 export const ANALYSIS_FFT_SIZE = 1024;
@@ -23,10 +24,14 @@ export interface FrameAnalysis {
   /** Linear RMS across all channels. */
   readonly rms: number;
   /**
-   * Loudness. `analyseFrame` can only offer unweighted dBFS here; the engine
-   * replaces it with K-weighted momentary LUFS.
+   * Integrated (programme) loudness in LUFS. `analyseFrame` can only offer
+   * unweighted dBFS here; the engine replaces it with the gated K-weighted value.
    */
   readonly lufs: number;
+  /** K-weighted momentary loudness, 400 ms window. */
+  readonly momentaryLufs: number;
+  /** K-weighted short-term loudness, 3 s window. */
+  readonly shortTermLufs: number;
   /** Per-channel levels, one entry per channel in the incoming frame. */
   readonly levels: readonly ChannelLevels[];
   /** De-interleaved channels; mono frames are duplicated so both scopes draw. */
@@ -182,7 +187,22 @@ export function analyseFrame(frame: PcmAudioFrame): FrameAnalysis {
   // anti-phase tone stays visible instead of cancelling out.
   const { bins, spectrogramRow } = combineSpectra(hasTwoChannels ? [left, right] : [left]);
 
-  return { peak, rms, lufs: toDb(rms), levels, left, right, bins, spectrogramRow };
+  // Loudness never reads below the gate: -100 dBFS would be "quieter than
+  // silence" for a value the UI presents as LUFS.
+  const lufs = Math.max(LOUDNESS_GATE_LUFS, toDb(rms));
+
+  return {
+    peak,
+    rms,
+    lufs,
+    momentaryLufs: lufs,
+    shortTermLufs: lufs,
+    levels,
+    left,
+    right,
+    bins,
+    spectrogramRow,
+  };
 }
 
 const SILENT_BINS = (() => {
@@ -196,7 +216,9 @@ export function silentAnalysis(): FrameAnalysis {
   return {
     peak: 0,
     rms: 0,
-    lufs: ANALYSIS_FLOOR_DB,
+    lufs: LOUDNESS_GATE_LUFS,
+    momentaryLufs: LOUDNESS_GATE_LUFS,
+    shortTermLufs: LOUDNESS_GATE_LUFS,
     levels: [{ peak: 0, rms: 0 }],
     left: new Float32Array(0),
     right: new Float32Array(0),
