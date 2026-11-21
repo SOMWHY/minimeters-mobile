@@ -1,4 +1,7 @@
-import type { FrameAnalysis } from '@/features/monitoring/analysis';
+import {
+  ANALYSIS_FLOOR_DB,
+  type FrameAnalysis,
+} from '@/features/monitoring/analysis';
 import {
   linearToDb,
   LOUDNESS_BAR_DB_RANGE,
@@ -48,9 +51,22 @@ describe('linearToDb', () => {
   });
 
   it('floors silence and nonsense instead of returning -Infinity', () => {
-    expect(linearToDb(0)).toBe(SPECTRUM_DB_RANGE[0]);
-    expect(linearToDb(Number.NaN)).toBe(SPECTRUM_DB_RANGE[0]);
-    expect(linearToDb(-1)).toBe(SPECTRUM_DB_RANGE[0]);
+    expect(linearToDb(0)).toBe(ANALYSIS_FLOOR_DB);
+    expect(linearToDb(Number.NaN)).toBe(ANALYSIS_FLOOR_DB);
+    expect(linearToDb(-1)).toBe(ANALYSIS_FLOOR_DB);
+  });
+
+  it('clamps a silent spectrum to the display floor, not the metering floor', () => {
+    // The plot spans -80..0 dB even though metering keeps a -100 dBFS floor.
+    expect(SPECTRUM_DB_RANGE).toEqual([-80, 0]);
+    expect(toBarFraction(linearToDb(0), SPECTRUM_DB_RANGE)).toBe(0);
+  });
+
+  it('draws a silent spectrum as a flat row instead of an empty card', () => {
+    // Every bin sits on the metering floor when the input is muted; on the
+    // -80..0 display scale that is a zero-height bar for all 160 of them.
+    expect(toBarFraction(ANALYSIS_FLOOR_DB, SPECTRUM_DB_RANGE)).toBe(0);
+    expect(toBarFraction(-80, SPECTRUM_DB_RANGE)).toBe(0);
   });
 });
 

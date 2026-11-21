@@ -12,10 +12,10 @@ const window = { width: 390, height: 844 };
 const insets = { top: 47, bottom: 34, left: 0, right: 0 };
 
 describe('defaultOrbPosition', () => {
-  it('sits in the bottom-right corner, inside the safe area', () => {
+  it('sits in the bottom-right corner, with only a margin off the edge', () => {
     expect(defaultOrbPosition({ window, insets })).toEqual({
       x: window.width - ORB_SIZE - ORB_MARGIN,
-      y: window.height - insets.bottom - ORB_SIZE - ORB_MARGIN,
+      y: window.height - ORB_SIZE - ORB_MARGIN,
     });
   });
 });
@@ -35,8 +35,27 @@ describe('clampOrbPosition', () => {
 
     expect(clampOrbPosition({ position: { x: 9_999, y: 9_999 }, window, insets })).toEqual({
       x: window.width - ORB_SIZE - ORB_MARGIN,
-      y: window.height - insets.bottom - ORB_SIZE - ORB_MARGIN,
+      y: window.height - ORB_SIZE - ORB_MARGIN,
     });
+  });
+
+  it('lets the orb reach the bottom even when a bottom inset is reported', () => {
+    // The grid runs to the physical bottom edge, so the orb must be able to sit
+    // there too — subtracting `insets.bottom` stopped it a bar-height short.
+    const deep = { top: 0, bottom: 48, left: 0, right: 0 };
+
+    expect(
+      clampOrbPosition({ position: { x: 0, y: 9_999 }, window, insets: deep }),
+    ).toEqual({ x: insets.left + ORB_MARGIN, y: window.height - ORB_SIZE - ORB_MARGIN });
+  });
+
+  it('keeps a stored bottom position when the measured box is taller than the window', () => {
+    // Android reports a window shorter than the laid-out root; the measured box
+    // wins, so a position near the real bottom must not be clamped back up.
+    const measured = { width: window.width, height: window.height + 48 };
+    const position = { x: 100, y: window.height - ORB_SIZE - ORB_MARGIN };
+
+    expect(clampOrbPosition({ position, window: measured, insets })).toEqual(position);
   });
 
   it('re-clamps after a rotation shrinks the window', () => {
@@ -47,7 +66,7 @@ describe('clampOrbPosition', () => {
       clampOrbPosition({ position: { x: 900, y: 700 }, window: landscape, insets }),
     ).toEqual({
       x: landscape.width - ORB_SIZE - ORB_MARGIN,
-      y: landscape.height - insets.bottom - ORB_SIZE - ORB_MARGIN,
+      y: landscape.height - ORB_SIZE - ORB_MARGIN,
     });
   });
 });

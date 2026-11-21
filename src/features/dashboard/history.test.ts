@@ -9,17 +9,22 @@ import {
 const row = (value: number): Float32Array => new Float32Array([value]);
 
 describe('spectrogram history window', () => {
-  it('shows exactly the configured number of seconds at the real poll cadence', () => {
+  it('covers the configured number of seconds at the real poll cadence', () => {
     // One row per polled frame: this is the assumption the plot's timeline rests
-    // on, so a change to either constant has to fail here.
-    expect(SPECTROGRAM_HISTORY_ROWS * STREAM_REFRESH_MS).toBe(
-      SPECTROGRAM_HISTORY_SECONDS * 1000,
+    // on, so a change to either constant has to fail here. The row count is
+    // capped, so the window rounds down to whole rows rather than matching the
+    // nominal duration exactly.
+    const window = SPECTROGRAM_HISTORY_ROWS * STREAM_REFRESH_MS;
+
+    expect(window).toBeLessThanOrEqual(SPECTROGRAM_HISTORY_SECONDS * 1000);
+    expect(window).toBeGreaterThan(
+      SPECTROGRAM_HISTORY_SECONDS * 1000 - 2 * STREAM_REFRESH_MS,
     );
   });
 
-  it('keeps 5 s of history at a 100 ms cadence', () => {
-    expect(STREAM_REFRESH_MS).toBe(100);
-    expect(SPECTROGRAM_HISTORY_ROWS).toBe(50);
+  it('keeps 4 s of history at the 33 ms poll cadence', () => {
+    expect(STREAM_REFRESH_MS).toBe(33);
+    expect(SPECTROGRAM_HISTORY_ROWS).toBe(120);
   });
 });
 

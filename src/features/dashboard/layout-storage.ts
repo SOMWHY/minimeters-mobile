@@ -219,3 +219,31 @@ export async function saveTheme(deps: LayoutStorageDeps, themeId: string): Promi
     // Same rationale as `saveLayout`.
   }
 }
+
+/** Storage key for the fullscreen preference. */
+export const FULLSCREEN_STORAGE_KEY = 'minimeters.dashboard.fullscreen.v1';
+
+/**
+ * Read the stored fullscreen preference.
+ *
+ * Only the literal `'1'` means fullscreen: a missing, corrupt, or hand-edited
+ * value falls back to the windowed layout, because an app that relaunches into
+ * a hidden-navigation-bar state the user cannot undo is worse than one that
+ * forgets the toggle.
+ */
+export async function loadFullscreen(deps: LayoutStorageDeps): Promise<boolean> {
+  try {
+    return (await deps.getItem(FULLSCREEN_STORAGE_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Persist the fullscreen preference. Storage failures are swallowed. */
+export async function saveFullscreen(deps: LayoutStorageDeps, fullscreen: boolean): Promise<void> {
+  try {
+    await deps.setItem(FULLSCREEN_STORAGE_KEY, fullscreen ? '1' : '0');
+  } catch {
+    // Same rationale as `saveLayout`.
+  }
+}

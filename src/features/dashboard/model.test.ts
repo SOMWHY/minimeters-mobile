@@ -11,10 +11,12 @@ import {
   fitRowsToViewport,
   fitToConfig,
   gridForWindow,
+  gridViewport,
   layoutRowCount,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
   restoreFactoryLayout,
+  viewportHeight,
 } from './model';
 
 function placementKey(placement: GridPlacement): string {
@@ -93,6 +95,18 @@ describe('DEFAULT_DASHBOARD_ITEMS', () => {
   it('fits the phone grid without overlapping', () => {
     expectNoOverlap(DEFAULT_DASHBOARD_ITEMS, GRID_PRESETS.phone.columns);
   });
+
+  it('stacks the spectrum directly on top of the spectrogram', () => {
+    const byKind = new Map(DEFAULT_DASHBOARD_ITEMS.map((item) => [item.kind, item.placement]));
+
+    // The two time/frequency views belong together: the meters sit above them
+    // instead of splitting the pair with a row of their own.
+    expect(byKind.get('spectrum')!.row + byKind.get('spectrum')!.rowSpan).toBe(
+      byKind.get('spectrogram')!.row,
+    );
+    expect(byKind.get('spectrum')!.colSpan).toBe(2);
+    expect(byKind.get('vu')!.row).toBeLessThan(byKind.get('spectrum')!.row);
+  });
 });
 
 describe('defaultLayout', () => {
@@ -166,6 +180,41 @@ describe('layoutRowCount', () => {
   });
 });
 
+describe('viewportHeight', () => {
+  it('reserves the status bar and nothing else', () => {
+    // The bottom inset is what used to leave a dead band under the last row.
+    expect(viewportHeight({ windowHeight: 844, insets: { top: 47 } })).toBe(797);
+  });
+
+  it('never goes negative', () => {
+    expect(viewportHeight({ windowHeight: 20, insets: { top: 47 } })).toBe(0);
+  });
+
+  it('survives a negative or absurd inset', () => {
+    expect(viewportHeight({ windowHeight: 800, insets: { top: -10 } })).toBe(800);
+    expect(viewportHeight({ windowHeight: 800, insets: { top: Number.NaN } })).toBe(800);
+    expect(viewportHeight({ windowHeight: Number.NaN, insets: { top: 0 } })).toBe(0);
+  });
+});
+
+describe('gridViewport', () => {
+  it('prefers the measured viewport over the window estimate', () => {
+    // Android reports a window shorter than the laid-out view: the measured
+    // number is the truth, and fitting to the estimate is what left the band.
+    expect(gridViewport({ measured: 780, windowHeight: 900, insets: { top: 24 } })).toBe(780);
+  });
+
+  it('falls back to the estimate before the first layout pass', () => {
+    for (const measured of [null, undefined, 0, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(gridViewport({ measured, windowHeight: 900, insets: { top: 24 } })).toBe(876);
+    }
+  });
+
+  it('never goes negative through the fallback', () => {
+    expect(gridViewport({ measured: null, windowHeight: 20, insets: { top: 47 } })).toBe(0);
+  });
+});
+
 describe('fitRowsToViewport', () => {
   const preset = GRID_PRESETS.phone;
 
@@ -184,6 +233,16 @@ describe('fitRowsToViewport', () => {
     expect(metrics.columns).toBe(preset.columns);
     expect(metrics.gap).toBe(preset.gap);
     expect(metrics.padding).toBe(preset.padding);
+  });
+
+  it('fills a tall portrait screen even with only four rows', () => {
+    // The row height needed here (≈209 dp) is above the old 200 dp ceiling,
+    // which capped the fit and left the strip the user kept seeing.
+    const availableHeight = 900;
+    const rows = 4;
+    const metrics = fitRowsToViewport({ availableHeight, rows, preset });
+
+    expect(gridHeight(metrics, rows)).toBeCloseTo(availableHeight, 5);
   });
 
   it('keeps cards readable on a tall screen', () => {

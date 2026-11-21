@@ -24,6 +24,12 @@ export type OrbWindow = {
   readonly height: number;
 };
 
+/**
+ * Safe-area insets around the orb.
+ *
+ * `bottom` is accepted for call-site symmetry but no longer used: the orb may
+ * sit as low as `ORB_MARGIN` above the measured bottom edge.
+ */
 export type OrbInsets = {
   readonly top: number;
   readonly bottom: number;
@@ -37,7 +43,15 @@ function bounds(window: OrbWindow, insets: OrbInsets) {
   const minX = insets.left + ORB_MARGIN;
   const minY = insets.top + ORB_MARGIN;
   const maxX = window.width - insets.right - ORB_SIZE - ORB_MARGIN;
-  const maxY = window.height - insets.bottom - ORB_SIZE - ORB_MARGIN;
+  /*
+   * The bottom inset is deliberately not subtracted.
+   *
+   * The grid runs to the physical bottom edge, so reserving the navigation-bar
+   * strip here left the orb unable to reach the same edge the modules fill —
+   * it stopped a full bar-height above where the user wanted it. `ORB_MARGIN`
+   * is the only thing keeping it off the edge, which is enough to stay tappable.
+   */
+  const maxY = window.height - ORB_SIZE - ORB_MARGIN;
 
   return {
     // A window smaller than the orb would invert the range; collapse it instead

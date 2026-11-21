@@ -47,7 +47,24 @@ export type PcmSocketClientCallbacks = {
  * matters after a stall: replaying minutes of backlog would make the meters
  * lag by minutes instead of resynchronising.
  */
-export const MAX_BUFFERED_SECONDS = 2;
+/**
+ * How much audio the client may hold before it starts throwing the oldest away.
+ *
+ * This is a latency budget, not a storage limit. The pacer drains every 33 ms and
+ * analyzes what it finds, so a deep queue does not make the picture smoother — it
+ * makes it *older*: once the queue fills to the cap, the plot is permanently that
+ * many milliseconds behind the sound. 150 ms is four analysis ticks: enough to
+ * ride out one slow frame, small enough that a backlog can never become visible.
+ */
+export const MAX_BUFFERED_SECONDS = 0.15;
+
+/**
+ * Frames handed to the analyzer per drain.
+ *
+ * The newest few keep the meters' time constants honest; anything older is
+ * already off-screen, and analysing it delays the frame that is on-screen.
+ */
+export const MAX_DRAIN_FRAMES = 3;
 
 function createWebSocket(url: string, handlers: SocketHandlers): SocketTransport {
   const socket = new WebSocket(url);
@@ -74,6 +91,9 @@ export class PcmSocketClient {
   private state: PcmConnectionState = 'disconnected';
   private frames: PcmAudioFrame[] = [];
   private bufferedSamples = 0;
+  /** Wall-clock arrival of the previous binary message, for cadence diagnosis. */
+  private lastMessageAt = 0;
+  private messageGapMs = 0;
   private lastDeviceToken: string | null = null;
   /** Long-lived credential presented on every handshake, if the server issued one. */
   private deviceToken: string | null = null;
@@ -160,14 +180,19 @@ export class PcmSocketClient {
   }
 
   /**
-   * Removes and returns every frame received since the previous drain.
+   * Removes the buffered frames and returns the newest `maxFrames` of them.
    *
-   * Analysis must consume the whole buffer: reading only the newest frame
-   * silently discards most of the audio, which makes every duration-based
-   * meter (peak hold, RMS window, VU release) advance slower than real time.
+   * Analysis still iterates over what it is given, because duration-based meters
+   * (peak hold, RMS window, VU release) advance per frame. But feeding it the
+   * whole buffer is what turns a slow renderer into permanent lag: a 30-frame
+   * backlog costs 30 FFTs *and* shows audio captured a second ago. Handing over
+   * the newest few keeps the time constants close to real time while keeping the
+   * picture attached to the present.
    */
-  drainFrames(): PcmAudioFrame[] {
-    const drained = this.frames;
+  drainFrames(maxFrames: number = MAX_DRAIN_FRAMES): PcmAudioFrame[] {
+    const limit = Math.max(1, Math.floor(maxFrames) || MAX_DRAIN_FRAMES);
+    const drained =
+      this.frames.length > limit ? this.frames.slice(-limit) : this.frames;
     this.frames = [];
     this.bufferedSamples = 0;
 
@@ -177,6 +202,17 @@ export class PcmSocketClient {
   /** Frames waiting for the next drain; diagnostics and tests only. */
   getPendingFrameCount(): number {
     return this.frames.length;
+  }
+
+  /**
+   * Interval between the last two binary messages, ms.
+   *
+   * This is the network's cadence, independent of how often we poll: if it is
+   * large while our poll is only 33 ms, the batching happens on the server (or
+   * in the driver), not in our loop.
+   */
+  getMessageGapMs(): number {
+    return this.messageGapMs;
   }
 
   /** Device token issued by the server on the current or a previous pairing. */
@@ -268,6 +304,10 @@ export class PcmSocketClient {
       this.callbacks.onProtocolError?.(result.reason);
       return;
     }
+
+    const now = Date.now();
+    this.messageGapMs = this.lastMessageAt === 0 ? 0 : now - this.lastMessageAt;
+    this.lastMessageAt = now;
 
     this.pushFrame(result.frame);
     this.receivedFrameCount += 1;

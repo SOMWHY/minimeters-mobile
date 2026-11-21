@@ -35,6 +35,7 @@ import {
 } from './readout';
 import {
   LOUDNESS_BAR_DB_RANGE,
+  loudnessReadout,
   loudnessValues,
   SPECTRUM_DB_RANGE,
   vuLevels,
@@ -47,6 +48,11 @@ export type ModuleBodyProps = {
   readonly frame: PcmAudioFrame | null;
   /** `null` until the first frame arrives, so modules show their waiting state. */
   readonly analysis: FrameAnalysis | null;
+  /**
+   * Fast-lane analysis for the meters only: same shape, updated every poll while
+   * `analysis` updates at half rate. Falls back to `analysis` when absent.
+   */
+  readonly meter?: FrameAnalysis | null;
   readonly history: readonly Float32Array[];
   /** Recent auto-gained blocks, oldest first — the waveform's picture of the past. */
   readonly scopeFrames: readonly PcmBlock[];
@@ -71,11 +77,15 @@ function ModuleBodyBase({
   theme,
   frame,
   analysis,
+  meter: meterProp,
   history,
   scopeFrames,
   editing = false,
 }: ModuleBodyProps): ReactElement {
   const height = rect.height;
+  // Meters read the fast lane and fall back to the scope rate when the caller
+  // does not split them (stories, tests).
+  const meter = meterProp ?? analysis;
   const block = toScopeBlock(frame, analysis);
   const sampleRate = frame?.sampleRate ?? DEFAULT_SAMPLE_RATE;
 
@@ -157,13 +167,20 @@ function ModuleBodyBase({
       }
       break;
     case 'vu':
-      content = <VuModule theme={theme} data={analysis ? vuLevels(analysis) : null} height={height} />;
+      content = (
+        <VuModule
+          theme={theme}
+          data={meter ? vuLevels(meter) : null}
+          readout={loudnessReadout(meter)}
+          height={height}
+        />
+      );
       break;
     case 'loudness':
       content = (
         <LoudnessModule
           theme={theme}
-          data={analysis ? loudnessValues(analysis) : null}
+          data={meter ? loudnessValues(meter) : null}
           dbRange={LOUDNESS_BAR_DB_RANGE}
           height={height}
         />

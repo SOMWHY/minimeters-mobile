@@ -4,8 +4,10 @@ import type { DashboardLayout, GridConfig } from '@minimetermobile/ui/dist/dashb
 
 import {
   clearLayout,
+  loadFullscreen,
   loadLayout,
   loadTheme,
+  saveFullscreen,
   saveLayout,
   saveTheme,
   type LayoutStorageDeps,
@@ -19,8 +21,11 @@ export type DashboardLayoutController = {
   /** `null` until the stored layout has been read; render a skeleton until then. */
   readonly layout: DashboardLayout | null;
   readonly themeId: string;
+  /** True when the host asked for the immersive layout (system bars hidden). */
+  readonly fullscreen: boolean;
   readonly setLayout: (next: DashboardLayout) => void;
   readonly setThemeId: (next: string) => void;
+  readonly setFullscreen: (next: boolean) => void;
   readonly resetLayout: () => void;
   readonly forgetLayout: () => void;
 };
@@ -39,6 +44,7 @@ export function useDashboardLayout(
 ): DashboardLayoutController {
   const [layout, setLayoutState] = useState<DashboardLayout | null>(null);
   const [themeId, setThemeIdState] = useState(defaultThemeId);
+  const [fullscreen, setFullscreenState] = useState(false);
   const loadedRef = useRef(false);
   /** Latest config without making it a load dependency: see the rotation effect. */
   const configRef = useRef(config);
@@ -105,6 +111,30 @@ export function useDashboardLayout(
     };
   }, [defaultThemeId, storage, themeIds]);
 
+  // Same one-read rule as the theme: the stored preference is applied once, and
+  // the default stays windowed until it arrives.
+  useEffect(() => {
+    let active = true;
+
+    void loadFullscreen(storage).then((stored) => {
+      if (active) {
+        setFullscreenState(stored);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [storage]);
+
+  const setFullscreen = useCallback(
+    (next: boolean) => {
+      setFullscreenState(next);
+      void saveFullscreen(storage, next);
+    },
+    [storage],
+  );
+
   const setThemeId = useCallback(
     (next: string) => {
       setThemeIdState(next);
@@ -140,7 +170,25 @@ export function useDashboardLayout(
   }, [storage]);
 
   return useMemo(
-    () => ({ layout, themeId, setLayout, setThemeId, resetLayout, forgetLayout }),
-    [forgetLayout, layout, resetLayout, setLayout, setThemeId, themeId],
+    () => ({
+      layout,
+      themeId,
+      fullscreen,
+      setLayout,
+      setThemeId,
+      setFullscreen,
+      resetLayout,
+      forgetLayout,
+    }),
+    [
+      forgetLayout,
+      fullscreen,
+      layout,
+      resetLayout,
+      setFullscreen,
+      setLayout,
+      setThemeId,
+      themeId,
+    ],
   );
 }

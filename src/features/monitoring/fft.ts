@@ -19,6 +19,29 @@ function assertPowerOfTwo(size: number): void {
  * `re` and `im` must both be exactly `size` long; `im` starts as zeros for real
  * input. No windowing and no normalisation happen here — callers own both.
  */
+/** cos/sin pairs for every offset of a butterfly of width `2 * half`. */
+const twiddleCache = new Map<number, Float64Array>();
+
+function twiddlesFor(half: number): Float64Array {
+  const cached = twiddleCache.get(half);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const angleStep = (-2 * Math.PI) / (half * 2);
+  const table = new Float64Array(half * 2);
+
+  for (let offset = 0; offset < half; offset += 1) {
+    table[offset * 2] = Math.cos(angleStep * offset);
+    table[offset * 2 + 1] = Math.sin(angleStep * offset);
+  }
+
+  twiddleCache.set(half, table);
+
+  return table;
+}
+
 export function fftInPlace(re: Float64Array, im: Float64Array): void {
   const size = re.length;
   assertPowerOfTwo(size);
@@ -50,13 +73,15 @@ export function fftInPlace(re: Float64Array, im: Float64Array): void {
 
   for (let width = 2; width <= size; width <<= 1) {
     const half = width >> 1;
-    const angleStep = (-2 * Math.PI) / width;
+    const twiddles = twiddlesFor(half);
 
     for (let start = 0; start < size; start += width) {
       for (let offset = 0; offset < half; offset += 1) {
-        const angle = angleStep * offset;
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
+        // Twiddles are shared by every block of a given width, so they are
+        // computed once per size and reused: evaluating sin/cos in the inner
+        // loop cost more than the butterflies themselves.
+        const cos = twiddles[offset * 2]!;
+        const sin = twiddles[offset * 2 + 1]!;
 
         const evenIndex = start + offset;
         const oddIndex = evenIndex + half;

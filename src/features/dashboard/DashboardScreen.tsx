@@ -4,11 +4,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   useColorScheme,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DashboardGrid,
@@ -22,9 +25,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
+import { UpdateNotice } from '@/features/updates/UpdateNotice';
+import { useAppUpdate } from '@/features/updates/use-app-update';
 
-import { ConnectionLight } from './ConnectionLight';
-import { fitRowsToViewport, gridForWindow, layoutRowCount } from './model';
+import { fitRowsToViewport, gridForWindow, gridViewport, layoutRowCount } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
 import { ModuleBody } from './module-bodies';
 import { loadOrbPosition, saveOrbPosition } from './orb-storage';
@@ -36,6 +40,7 @@ import {
 } from './settings-orb';
 import { SettingsOrb } from './SettingsOrb';
 import { useDashboardLayout } from './use-dashboard-layout';
+import { useFullscreen } from './use-fullscreen';
 import { useLiveAnalysis } from './use-live-analysis';
 
 const themeIds = Object.keys(BUILT_IN_THEMES);
@@ -73,11 +78,21 @@ export type DashboardScreenProps = {
  */
 export function DashboardScreen({ storage }: DashboardScreenProps) {
   const stream = usePcmConnection();
-  const { analysis, history, scopeFrames } = useLiveAnalysis();
+  const { analysis, frame: scopeFrame, history, scopeFrames, meter } = useLiveAnalysis();
 
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
+
+  /**
+   * Height the grid may fill, in dp, as actually laid out.
+   *
+   * Measured rather than derived — see `gridViewport`. `null` until the first
+   * layout pass, which falls back to the window estimate.
+   */
+  const [viewport, setViewport] = useState<number | null>(null);
+  /** The screen's own box, measured, so the orb clamps to real bounds. */
+  const [box, setBox] = useState<{ readonly width: number; readonly height: number } | null>(null);
 
   // Columns come from the preset alone; the fitted row height needs the layout,
   // which in turn needs the columns. Resolving them in that order avoids a cycle.
@@ -86,15 +101,36 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     [height, width],
   );
   const defaultThemeId = scheme === 'dark' ? 'midnight' : 'ice';
-  const { layout, themeId, setLayout, setThemeId, resetLayout } = useDashboardLayout(
-    config,
-    storage,
-    themeIds,
-    defaultThemeId,
-  );
+  const { layout, themeId, fullscreen, setLayout, setThemeId, setFullscreen, resetLayout } =
+    useDashboardLayout(config, storage, themeIds, defaultThemeId);
 
   const rows = layout === null ? 1 : layoutRowCount(layout.items);
-  const availableHeight = Math.max(0, height - insets.top - insets.bottom);
+  /**
+   * Only the status bar is reserved at the top.
+   *
+   * The bottom inset (Android navigation bar, iOS home indicator) is *not*
+   * padded off: the strip it used to reserve was a full-width band of
+   * background the modules could never reach — most obvious in portrait, where
+   * the bar sits at the bottom, and invisible in landscape, where it moves to
+   * the side. The grid runs to the physical bottom edge and the modules draw
+   * under a transparent system bar, the way the desktop app does.
+   *
+   * The height comes from the measured scroll viewport, not from the window:
+   * the two disagree on Android (see `gridViewport`), and the disagreement is
+   * exactly the dead band this fit used to leave behind.
+   */
+  /**
+   * In fullscreen the status bar is hidden, so the strip it occupied is padding
+   * the user paid for and cannot see. Zeroing the inset is what actually lets
+   * the grid reach the notch; hiding the bar alone would leave the dead band.
+   */
+  const topInset = fullscreen ? 0 : insets.top;
+
+  const availableHeight = gridViewport({
+    measured: viewport,
+    windowHeight: height,
+    insets: { top: topInset },
+  });
   const metrics = useMemo(
     () => fitRowsToViewport({ availableHeight, rows, preset: presetMetrics }),
     [availableHeight, presetMetrics, rows],
@@ -114,17 +150,37 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     BUILT_IN_THEMES[themeId as keyof typeof BUILT_IN_THEMES] ?? BUILT_IN_THEMES.midnight;
   const hidden = layout ? hiddenItems(layout.items) : [];
 
-  const orbWindow = useMemo(() => ({ width, height }), [height, width]);
+  const orbWindow = useMemo(() => box ?? { width, height }, [box, height, width]);
   const orbInsets: OrbInsets = useMemo(
-    () => ({ top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right }),
-    [insets.bottom, insets.left, insets.right, insets.top],
+    () => ({
+      // Fullscreen pulls the clamp in to the physical edges, so the orb can be
+      // parked in a corner the system bars used to reserve.
+      top: topInset,
+      bottom: fullscreen ? 0 : insets.bottom,
+      left: insets.left,
+      right: insets.right,
+    }),
+    [fullscreen, insets.bottom, insets.left, insets.right, topInset],
   );
   const orbStorage = storage ?? AsyncStorage;
 
   const [orbPosition, setOrbPosition] = useState<OrbPosition>(() =>
     defaultOrbPosition({ window: { width, height }, insets: orbInsets }),
   );
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);  const [manualOpen, setManualOpen] = useState(false);
+  const [manualAddress, setManualAddress] = useState('');
+  const [manualToken, setManualToken] = useState('');
+  const toggleManualEntry = useCallback(() => {
+    setManualOpen((open) => {
+      // Opening starts from a clean slate; a stale error from a previous attempt
+      // would otherwise read as if this one had already failed.
+      if (!open) {
+        stream.clearScanError();
+      }
+
+      return !open;
+    });
+  }, [stream]);
   useEffect(() => {
     let active = true;
 
@@ -136,8 +192,13 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
       setOrbPosition(
         clampOrbPosition({
           position: stored,
-          window: { width, height },
-          insets: { top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right },
+          window: orbWindow,
+          insets: {
+            top: topInset,
+            bottom: fullscreen ? 0 : insets.bottom,
+            left: insets.left,
+            right: insets.right,
+          },
         }),
       );
     });
@@ -145,7 +206,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     return () => {
       active = false;
     };
-  }, [height, insets.bottom, insets.left, insets.right, insets.top, orbStorage, width]);
+  }, [fullscreen, insets.bottom, insets.left, insets.right, orbStorage, orbWindow, topInset]);
 
   const handleOrbDragEnd = useCallback(
     (position: OrbPosition) => {
@@ -154,6 +215,8 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     },
     [orbStorage],
   );
+
+  const update = useAppUpdate();
 
   const togglePanel = useCallback(() => setPanelOpen((current) => !current), []);
 
@@ -179,11 +242,38 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
             ? `Protocol error: ${stream.protocolError}`
             : null;
 
+  const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = event.nativeEvent.layout.height;
+
+    if (Number.isFinite(next) && next > 0) {
+      setViewport(next);
+    }
+  }, []);
+
+  const handleBoxLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
+
+    if (nextWidth > 0 && nextHeight > 0) {
+      setBox({ width: nextWidth, height: nextHeight });
+    }
+  }, []);
+
+  useFullscreen(fullscreen);
+
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+      <StatusBar hidden={fullscreen} />
+      <View
+        testID="dashboard-screen"
+        onLayout={handleBoxLayout}
+        style={[
+          styles.screen,
+          { paddingTop: topInset, paddingLeft: insets.left, paddingRight: insets.right },
+        ]}
+      >
         <ScrollView
           testID="dashboard-scroll"
+          onLayout={handleViewportLayout}
           style={styles.scroll}
           contentContainerStyle={styles.content}
           scrollEnabled={!dragging}
@@ -205,8 +295,9 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
                   item={item}
                   rect={rect}
                   theme={theme}
-                  frame={stream.frame}
+                  frame={scopeFrame}
                   analysis={analysis}
+                  meter={meter}
                   history={history}
                   scopeFrames={scopeFrames}
                   editing={editing}
@@ -215,26 +306,27 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
             />
           )}
         </ScrollView>
-      </SafeAreaView>
-
-      <View
-        testID="connection-light-host"
-        pointerEvents="none"
-        style={[styles.lightHost, { top: insets.top + 8 }]}
-      >
-        <ConnectionLight
-          status={stream.status}
-          reauthRequired={stream.reauthRequired}
-          fatalError={stream.fatalError}
-          connectionError={stream.connectionError}
-          protocolError={stream.protocolError}
-        />
       </View>
+
+      <UpdateNotice
+        phase={update.phase}
+        theme={theme}
+        topInset={insets.top}
+        onApply={update.apply}
+        onDismiss={update.dismiss}
+      />
 
       <SettingsOrb
         theme={theme}
         window={orbWindow}
         insets={orbInsets}
+        indicator={{
+          status: stream.status,
+          reauthRequired: stream.reauthRequired,
+          fatalError: stream.fatalError,
+          connectionError: stream.connectionError,
+          protocolError: stream.protocolError,
+        }}
         initialPosition={orbPosition}
         onDragEnd={handleOrbDragEnd}
         open={panelOpen}
@@ -245,6 +337,38 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
             {banner}
           </ThemedText>
         )}
+
+        <View style={styles.toggleRow}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Fullscreen
+          </ThemedText>
+          {/*
+           * A `Pressable` pill, not RN's `Switch`: the native switch swallows
+           * touches inside this floating panel on Android, and a pill matches the
+           * theme chips right below it.
+           */}
+          <Pressable
+            testID="fullscreen-toggle"
+            accessibilityRole="switch"
+            accessibilityLabel="Fullscreen"
+            accessibilityState={{ checked: fullscreen }}
+            onPress={() => setFullscreen(!fullscreen)}
+            style={[
+              styles.switchTrack,
+              { backgroundColor: fullscreen ? theme.colors.accent : theme.colors.axis },
+            ]}
+          >
+            <View
+              style={[
+                styles.switchKnob,
+                {
+                  backgroundColor: theme.colors.surface,
+                  marginLeft: fullscreen ? 22 : 2,
+                },
+              ]}
+            />
+          </Pressable>
+        </View>
 
         <View style={styles.themeRow}>
           <ThemedText type="small" themeColor="textSecondary">
@@ -271,7 +395,58 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           </View>
         </View>
 
-        {!stream.isPaired && <Button title="Scan plugin QR code" onPress={stream.startScan} />}
+        {!stream.isPaired && (
+          <>
+            <Button title="Scan plugin QR code" onPress={stream.startScan} />
+            <Button
+              title={manualOpen ? 'Cancel manual entry' : 'Enter address manually'}
+              onPress={toggleManualEntry}
+            />
+            {manualOpen && (
+              <View style={styles.manualForm}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Both values are printed next to the QR code in the desktop app.
+                </ThemedText>
+                <TextInput
+                  testID="manual-address"
+                  value={manualAddress}
+                  onChangeText={setManualAddress}
+                  placeholder="192.168.1.20:8422"
+                  placeholderTextColor={theme.colors.axis}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  inputMode="url"
+                  style={[
+                    styles.input,
+                    { color: theme.colors.text, borderColor: theme.colors.axis },
+                  ]}
+                />
+                <TextInput
+                  testID="manual-token"
+                  value={manualToken}
+                  onChangeText={setManualToken}
+                  placeholder="Pairing token"
+                  placeholderTextColor={theme.colors.axis}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[
+                    styles.input,
+                    { color: theme.colors.text, borderColor: theme.colors.axis },
+                  ]}
+                />
+                {stream.scanError !== null && (
+                  <ThemedText testID="manual-error" type="small" themeColor="textSecondary">
+                    {stream.scanError}
+                  </ThemedText>
+                )}
+                <Button
+                  title="Connect"
+                  onPress={() => stream.pairManually(manualAddress, manualToken)}
+                />
+              </View>
+            )}
+          </>
+        )}
 
         {stream.isPaired && (
           <>
@@ -289,6 +464,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
             <ModuleTray hidden={hidden} theme={theme} onRestore={handleRestore} />
           </ScrollView>
         )}
+
       </SettingsOrb>
 
       <PairingScannerOverlay
@@ -305,7 +481,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  safeArea: {
+  screen: {
     flex: 1,
   },
   scroll: {
@@ -314,12 +490,22 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
   },
-  lightHost: {
-    position: 'absolute',
-    left: 12,
-    width: 12,
-    height: 12,
-    zIndex: 10,
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  switchTrack: {
+    width: 46,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+  },
+  switchKnob: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
   themeRow: {
     gap: 6,
@@ -340,5 +526,15 @@ const styles = StyleSheet.create({
   },
   tray: {
     maxHeight: 140,
+  },
+  manualForm: {
+    gap: 8,
+  },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
   },
 });

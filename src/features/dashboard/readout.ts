@@ -8,7 +8,7 @@ import { ANALYSIS_FLOOR_DB, binFrequencyRange } from '@/features/monitoring/anal
  * The readout has to sample the *same* columns the library drew, so the host
  * passes this explicitly instead of relying on the library default staying put.
  */
-export const WAVEFORM_COLUMNS = 96;
+export const WAVEFORM_COLUMNS = 120;
 
 /** Fallback when the stream has not told us a rate yet. */
 export const DEFAULT_SAMPLE_RATE = 48_000;

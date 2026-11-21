@@ -4,6 +4,7 @@ import type { PcmBlock } from '@minimetermobile/ui';
 
 import { usePcmConnection } from '@/features/connection/connection-context';
 import type { FrameAnalysis } from '@/features/monitoring/analysis';
+import type { PcmAudioFrame } from '@/features/monitoring/pcm-frame';
 import { createAnalysisEngine } from '@/features/monitoring/engine';
 
 import { appendRow } from './history';
@@ -11,7 +12,23 @@ import { appendScopeFrame } from './scope-history';
 import { toScopeBlock } from './scope-block';
 
 export type LiveAnalysis = {
+  /**
+   * Fast lane: the newest frame analysis, updated on every poll (~30 Hz).
+   *
+   * Only the meters read this. Everything that draws — waveform, spectrum,
+   * spectrogram — uses `analysis`, which is emitted at half rate so five Skia
+   * scenes are not rebuilt 30 times a second on the JS thread.
+   */
+  readonly meter: FrameAnalysis | null;
+  /** Slow lane: what the scopes draw, emitted every `SCOPE_EMIT_EVERY_POLLS`. */
   readonly analysis: FrameAnalysis | null;
+  /**
+   * Newest raw frame, emitted with `analysis`.
+   *
+   * It must ride the slow lane: the cards take it as a prop, so updating it from
+   * the fast lane would fail `memo` on every poll and negate the whole split.
+   */
+  readonly frame: PcmAudioFrame | null;
   readonly history: readonly Float32Array[];
   /** Recent scope blocks (auto-gained), oldest first, for the waveform picture. */
   readonly scopeFrames: readonly PcmBlock[];
@@ -36,13 +53,25 @@ export type LiveAnalysis = {
  * ballistics are driven by the audio each frame carries, so skipping frames
  * scales every time constant by the skip factor.
  */
+/**
+ * Polls between scope emissions: 2 halves the redraw rate while keeping the
+ * meters (which read the fast lane) at the stream cadence.
+ */
+export const SCOPE_EMIT_EVERY_POLLS = 2;
+
 export function useLiveAnalysis(): LiveAnalysis {
   const { sessionId, subscribeFrames } = usePcmConnection();
-  const [live, setLive] = useState<Omit<LiveAnalysis, 'reset'>>({
+  const [meter, setMeter] = useState<FrameAnalysis | null>(null);
+  const [live, setLive] = useState<Omit<LiveAnalysis, 'reset' | 'meter'>>({
     analysis: null,
+    frame: null,
     history: [],
     scopeFrames: [],
   });
+  const frameRef = useRef<PcmAudioFrame | null>(null);
+  const historyRef = useRef<readonly Float32Array[]>([]);
+  const scopeFramesRef = useRef<readonly PcmBlock[]>([]);
+  const pollsSinceEmitRef = useRef(0);
   const engineRef = useRef<ReturnType<typeof createAnalysisEngine> | null>(null);
   const sessionIdRef = useRef(sessionId);
   /** Session the engine's accumulated state currently belongs to. */
@@ -66,20 +95,41 @@ export function useLiveAnalysis(): LiveAnalysis {
         if (isNewSession) {
           engine.reset();
           analysedSessionRef.current = sessionIdRef.current;
+          historyRef.current = [];
+          scopeFramesRef.current = [];
+          pollsSinceEmitRef.current = 0;
         }
 
-        setLive((previous) => {
-          let history = isNewSession ? [] : previous.history;
-          let scopeFrames: readonly PcmBlock[] = isNewSession ? [] : previous.scopeFrames;
-          let analysis: FrameAnalysis | null = null;
+        let latest: FrameAnalysis | null = null;
 
-          for (const frame of frames) {
-            analysis = engine.push(frame);
-            history = appendRow(history, analysis.spectrogramRow);
-            scopeFrames = appendScopeFrame(scopeFrames, toScopeBlock(frame, analysis));
-          }
+        for (const frame of frames) {
+          latest = engine.push(frame);
+          frameRef.current = frame;
+          historyRef.current = appendRow(historyRef.current, latest.spectrogramRow);
+          scopeFramesRef.current = appendScopeFrame(
+            scopeFramesRef.current,
+            toScopeBlock(frame, latest),
+          );
+        }
 
-          return { analysis, history, scopeFrames };
+        if (!latest) {
+          return;
+        }
+
+        setMeter(latest);
+
+        pollsSinceEmitRef.current += 1;
+
+        if (pollsSinceEmitRef.current < SCOPE_EMIT_EVERY_POLLS) {
+          return;
+        }
+
+        pollsSinceEmitRef.current = 0;
+        setLive({
+          analysis: latest,
+          frame: frameRef.current,
+          history: historyRef.current,
+          scopeFrames: scopeFramesRef.current,
         });
       }),
     [subscribeFrames],
@@ -87,8 +137,13 @@ export function useLiveAnalysis(): LiveAnalysis {
 
   const reset = useCallback(() => {
     engineRef.current?.reset();
-    setLive({ analysis: null, history: [], scopeFrames: [] });
+    historyRef.current = [];
+    scopeFramesRef.current = [];
+    pollsSinceEmitRef.current = 0;
+    frameRef.current = null;
+    setMeter(null);
+    setLive({ analysis: null, frame: null, history: [], scopeFrames: [] });
   }, []);
 
-  return { ...live, reset };
+  return { ...live, meter, reset };
 }

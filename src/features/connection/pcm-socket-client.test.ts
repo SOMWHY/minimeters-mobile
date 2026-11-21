@@ -1,5 +1,10 @@
 import { pcmPairing } from './test-fixtures';
-import { PcmSocketClient, type SocketHandlers } from './pcm-socket-client';
+import {
+  MAX_BUFFERED_SECONDS,
+  MAX_DRAIN_FRAMES,
+  PcmSocketClient,
+  type SocketHandlers,
+} from './pcm-socket-client';
 
 type FakeSocket = {
   handlers: SocketHandlers;
@@ -153,7 +158,7 @@ describe('PcmSocketClient', () => {
     expect(fake.factory).toHaveBeenCalledTimes(1);
   });
 
-  it('drains every buffered frame so analysis never skips audio', () => {
+  it('drains the newest frames so a backlog cannot become visible lag', () => {
     const fake = createFakeSocket();
     const client = new PcmSocketClient(pcmPairing, {}, fake.factory);
 
@@ -178,6 +183,55 @@ describe('PcmSocketClient', () => {
     // replaying a frame the analyser has already consumed.
     expect(client.getLatestFrame()).toBeNull();
     expect(client.getReceivedFrameCount()).toBe(3);
+  });
+
+  it('hands the analyser the newest frames and drops the stale ones', () => {
+    const fake = createFakeSocket();
+    const client = new PcmSocketClient(pcmPairing, {}, fake.factory);
+
+    client.connect();
+    fake.socket.handlers.onOpen();
+    fake.socket.handlers.onMessage(
+      JSON.stringify({ type: 'authenticated', version: 1, sampleFormat: 'f32le' }),
+    );
+
+    for (let index = 0; index < 8; index += 1) {
+      fake.socket.handlers.onMessage(makeStereoFrame());
+    }
+
+    const drained = client.drainFrames();
+
+    // Eight frames is a ~260 ms backlog: analysing all of it would draw audio
+    // from a quarter second ago, so only the newest MAX_DRAIN_FRAMES survive.
+    expect(drained).toHaveLength(MAX_DRAIN_FRAMES);
+    expect(client.getPendingFrameCount()).toBe(0);
+    // Dropping is a display decision: the received counter still counts them all.
+    expect(client.getReceivedFrameCount()).toBe(8);
+  });
+
+  it('caps the buffer at the latency budget, not at a storage limit', () => {
+    const fake = createFakeSocket();
+    const client = new PcmSocketClient(pcmPairing, {}, fake.factory);
+
+    client.connect();
+    fake.socket.handlers.onOpen();
+    fake.socket.handlers.onMessage(
+      JSON.stringify({ type: 'authenticated', version: 1, sampleFormat: 'f32le' }),
+    );
+
+    // makeStereoFrame carries one sample per channel at 48 kHz, so one frame is
+    // one sample: cap + 500 frames is a backlog past the latency budget.
+    const cap = Math.floor(48000 * MAX_BUFFERED_SECONDS);
+    const sent = cap + 500;
+
+    for (let index = 0; index < sent; index += 1) {
+      fake.socket.handlers.onMessage(makeStereoFrame());
+    }
+
+    expect(MAX_BUFFERED_SECONDS).toBeLessThanOrEqual(0.25);
+    expect(client.getPendingFrameCount()).toBeLessThanOrEqual(cap);
+    // The cap trims from the front, one frame at a time, so it lands just under.
+    expect(client.getPendingFrameCount()).toBeGreaterThan(cap - 10);
   });
 
   it('keeps the device token the server issues on authentication', () => {

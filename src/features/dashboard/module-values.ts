@@ -1,4 +1,8 @@
-import { ANALYSIS_FLOOR_DB, type FrameAnalysis } from '@/features/monitoring/analysis';
+import {
+  ANALYSIS_FLOOR_DB,
+  SPECTRUM_DISPLAY_FLOOR_DB,
+  type FrameAnalysis,
+} from '@/features/monitoring/analysis';
 import { LOUDNESS_GATE_LUFS } from '@/features/monitoring/loudness';
 
 /**
@@ -19,8 +23,15 @@ export const VU_BAR_DB_RANGE = [-60, 0] as const;
  */
 export const LOUDNESS_BAR_DB_RANGE = [LOUDNESS_GATE_LUFS, 0] as const;
 
-/** dB window the spectrum/spectrogram span. */
-export const SPECTRUM_DB_RANGE = [ANALYSIS_FLOOR_DB, 0] as const;
+/**
+ * dB window the spectrum and spectrogram span.
+ *
+ * Everything quieter than the floor clamps to a zero-height bar, which is the
+ * honest picture of silence: a flat row at the bottom. Silence must *not* become
+ * a `waiting` state — "waiting for data" means no frame has arrived, and a muted
+ * input still delivers frames.
+ */
+export const SPECTRUM_DB_RANGE = [SPECTRUM_DISPLAY_FLOOR_DB, 0] as const;
 
 export type NumericRange = readonly [number, number];
 
