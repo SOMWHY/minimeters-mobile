@@ -1,3 +1,5 @@
+**English** · [简体中文](README.zh-CN.md)
+
 # MiniMeters Mobile
 
 Phone-side dashboard for [MiniMeters](https://minimeters.app), built with Expo + React Native.
@@ -134,3 +136,8 @@ screen test that renders module bodies mocks `./module-bodies`.
   FFT per 33 ms frame.
 - VU/LUFS use exponential millisecond ballistics rather than a dB-domain 24 dB/s release.
 - Waveform history window is 3 s.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The one rule worth repeating: a native change (icon, splash,
+new native module, permission) must bump `version` in `app.json`, because `runtimeVersion` follows it.
