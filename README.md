@@ -4,6 +4,27 @@ Phone-side dashboard for [MiniMeters](https://minimeters.app), built with Expo +
 The desktop app (JUCE plugin / standalone, in `../MiniMetersMobileServer`) captures audio, streams
 raw PCM frames over a WebSocket, and this app re-draws the meters on a phone with Skia.
 
+## Download (Android)
+
+Grab the latest APK from [Releases](https://github.com/SOMWHY/minimeters-mobile/releases/latest):
+
+1. Download `minimeters-mobile-<version>-arm64.apk` and `SHA256SUMS.txt`.
+2. Optional but recommended — verify the download:
+   ```powershell
+   certutil -hashfile minimeters-mobile-<version>-arm64.apk SHA256
+   ```
+   The value must match the line in `SHA256SUMS.txt`.
+3. Install it. Android will warn that the app comes from an unknown source and that it was not
+   scanned by Play Protect — this is expected, the app is not distributed through Google Play.
+   Allow the install and choose "install anyway".
+4. Open the app and scan the QR code shown in the desktop plugin or standalone window.
+
+Requirements: Android 8.0+, **arm64 only** (no 32-bit or x86 build is published), phone and
+computer on the same local network, desktop side reachable on TCP 8422.
+
+No audio ever leaves your device: the phone receives raw PCM over the local network only. See
+[`PRIVACY.md`](PRIVACY.md).
+
 ## Architecture
 
 ```
@@ -76,19 +97,23 @@ Two keys are mandatory and are already in `app.json`:
 
 ### Building
 
-`eas.json` defines four profiles:
+`eas.json` defines five profiles:
 
 | Profile | Output | Needs Apple account |
 | --- | --- | --- |
 | `development` | dev client (internal) | no |
-| `preview` | **installable APK** — the HarmonyOS 4.x / sideload path | no |
+| `preview` | **installable APK** — internal testing, `preview` OTA channel | no |
+| `release` | **public APK** — GitHub Releases, `production` OTA channel, auto-incremented versionCode | no |
 | `preview-simulator` | unsigned iOS simulator `.app` — runnable in a browser (Appetize/BrowserStack) or a rented Mac | **no** |
 | `production` | app bundle (Play) / signed IPA | yes, for iOS |
 
 ```bash
-npx eas build --profile preview --platform android     # APK
+npx eas build --profile release --platform android     # public APK
+npx eas build --profile preview --platform android     # internal APK
 npx eas build --profile preview-simulator --platform ios
 ```
+
+Release procedure (keys, checksums, GitHub Release, OTA): [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Development
 

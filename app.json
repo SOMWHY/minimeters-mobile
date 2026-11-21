@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "minimeters-mobile",
+    "name": "MiniMeters Mobile",
     "slug": "minimeters-mobile",
     "version": "1.0.0",
     "orientation": "default",
@@ -28,7 +28,6 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA",
         "android.permission.CAMERA"
       ]
     },
