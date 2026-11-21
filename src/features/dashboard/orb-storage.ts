@@ -1,7 +1,14 @@
 import { parseOrbPosition, serializeOrbPosition, type OrbPosition } from './settings-orb';
 
-/** Storage key; the version suffix lets a future format change discard old payloads. */
-export const ORB_STORAGE_KEY = 'minimeters.dashboard.orb.v1';
+/**
+ * Storage key; the version suffix lets a format change discard old payloads.
+ *
+ * v2 because the default moved from the bottom-right corner to right-centre: a
+ * position saved by v1 would pin every existing install to the old corner and
+ * they would never see the new default. Dropping v1 is the migration — the orb
+ * simply appears at the new spot once, then remembers wherever it is dragged.
+ */
+export const ORB_STORAGE_KEY = 'minimeters.dashboard.orb.v2';
 
 /**
  * The slice of `AsyncStorage` we use.
@@ -18,7 +25,7 @@ export interface OrbStorageDeps {
  * A remembered orb position, or `null`.
  *
  * A missing or unreadable value is not an error: the orb simply starts in its
- * default corner, which is why this never throws.
+ * default spot, which is why this never throws.
  */
 export async function loadOrbPosition(
   storage: OrbStorageDeps,

@@ -1,6 +1,8 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { VisualizationTheme } from '@minimetermobile/ui/dist/theme';
 
+import { useI18n } from '@/i18n';
+
 import type { AppUpdatePhase } from './use-app-update';
 
 type Props = {
@@ -22,6 +24,8 @@ type Props = {
  * no half-applied state to explain.
  */
 export function UpdateNotice({ phase, theme, topInset, onApply, onDismiss }: Props) {
+  const { t } = useI18n();
+
   if (phase !== 'available' && phase !== 'downloading') {
     return null;
   }
@@ -44,20 +48,20 @@ export function UpdateNotice({ phase, theme, topInset, onApply, onDismiss }: Pro
       {busy ? (
         <ActivityIndicator size="small" color={theme.colors.accent} />
       ) : (
-        <Text style={[styles.label, { color: theme.colors.text }]}>Update available</Text>
+        <Text style={[styles.label, { color: theme.colors.text }]}>{t('update.available')}</Text>
       )}
 
       <Pressable
         testID="update-apply"
         accessibilityRole="button"
-        accessibilityLabel="Install update"
+        accessibilityLabel={t('update.installA11y')}
         accessibilityState={{ disabled: busy, busy }}
         disabled={busy}
         onPress={onApply}
         style={[styles.action, { borderColor: theme.colors.accent }]}
       >
         <Text style={[styles.actionLabel, { color: theme.colors.accent }]}>
-          {busy ? 'Updating…' : 'Update'}
+          {busy ? t('update.updating') : t('update.apply')}
         </Text>
       </Pressable>
 
@@ -69,7 +73,7 @@ export function UpdateNotice({ phase, theme, topInset, onApply, onDismiss }: Pro
       <Pressable
         testID="update-dismiss"
         accessibilityRole="button"
-        accessibilityLabel="Dismiss update"
+        accessibilityLabel={t('update.dismissA11y')}
         onPress={onDismiss}
         hitSlop={8}
       >

@@ -1,4 +1,5 @@
 import type { PcmConnectionState } from '@/features/connection/pcm-socket-client';
+import type { MessageKey } from '@/i18n/messages';
 
 /** What the single status light in the toolbar can say. */
 export type IndicatorTone = 'idle' | 'live' | 'error';
@@ -49,15 +50,19 @@ export function connectionTone({
   return 'idle';
 }
 
-/** Spoken description of the light; the colour alone is not accessible. */
-export function indicatorLabel(tone: IndicatorTone): string {
+/**
+ * Message key for the light, so the text is chosen by the renderer's language.
+ *
+ * The colour alone is not accessible; this is the spoken description.
+ */
+export function indicatorLabel(tone: IndicatorTone): MessageKey {
   if (tone === 'live') {
-    return 'Connected';
+    return 'status.connected';
   }
 
   if (tone === 'error') {
-    return 'Connection error';
+    return 'status.error';
   }
 
-  return 'Not connected';
+  return 'status.idle';
 }

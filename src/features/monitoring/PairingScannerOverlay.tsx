@@ -2,10 +2,14 @@ import { Button, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { PairingScanner } from '@/features/monitoring/PairingScanner';
+import { scanErrorKey } from '@/i18n/errors';
+import { useI18n } from '@/i18n';
+import type { ScanErrorCode } from '@/i18n/errors';
 
 export type PairingScannerOverlayProps = {
   readonly visible: boolean;
-  readonly error: string | null;
+  /** Why the last attempt was rejected, already reduced to a code. */
+  readonly error: ScanErrorCode | null;
   readonly onQrScanned: (data: string) => void;
   readonly onCancel: () => void;
 };
@@ -25,6 +29,8 @@ export function PairingScannerOverlay({
   onQrScanned,
   onCancel,
 }: PairingScannerOverlayProps) {
+  const { t } = useI18n();
+
   if (!visible) {
     return null;
   }
@@ -32,10 +38,12 @@ export function PairingScannerOverlay({
   return (
     <View testID="pairing-scanner-overlay" style={styles.overlay}>
       <View style={styles.card}>
-        <ThemedText type="subtitle">Scan the plugin QR code</ThemedText>
+        <ThemedText type="subtitle">{t('scanner.title')}</ThemedText>
         <PairingScanner active onQrScanned={onQrScanned} />
-        {error ? <ThemedText accessibilityRole="alert">{error}</ThemedText> : null}
-        <Button title="Cancel" onPress={onCancel} />
+        {error !== null ? (
+          <ThemedText accessibilityRole="alert">{t(scanErrorKey(error))}</ThemedText>
+        ) : null}
+        <Button title={t('scanner.cancel')} onPress={onCancel} />
       </View>
     </View>
   );

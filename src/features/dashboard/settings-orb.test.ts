@@ -12,11 +12,23 @@ const window = { width: 390, height: 844 };
 const insets = { top: 47, bottom: 34, left: 0, right: 0 };
 
 describe('defaultOrbPosition', () => {
-  it('sits in the bottom-right corner, with only a margin off the edge', () => {
+  it('sits on the right edge, vertically centred between the safe-area edges', () => {
+    const minY = insets.top + ORB_MARGIN;
+    // The bottom inset is not reserved (see `bounds`): the grid runs to the edge.
+    const maxY = window.height - ORB_SIZE - ORB_MARGIN;
+
     expect(defaultOrbPosition({ window, insets })).toEqual({
       x: window.width - ORB_SIZE - ORB_MARGIN,
-      y: window.height - ORB_SIZE - ORB_MARGIN,
+      y: minY + (maxY - minY) / 2,
     });
+  });
+
+  it('centres on the middle of the screen when there are no insets', () => {
+    const flat = { top: 0, bottom: 0, left: 0, right: 0 };
+
+    expect(defaultOrbPosition({ window, insets: flat }).y).toBe(
+      (ORB_MARGIN + window.height - ORB_SIZE - ORB_MARGIN) / 2,
+    );
   });
 });
 

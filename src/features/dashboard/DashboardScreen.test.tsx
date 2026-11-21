@@ -11,6 +11,7 @@ import type { SocketFactory, SocketHandlers } from '@/features/connection/pcm-so
 import { pcmPairing } from '@/features/connection/test-fixtures';
 import { PAIRING_STORAGE_KEY } from '@/features/connection/pairing-storage';
 import { STALL_TIMEOUT_MS } from '@/features/connection/reconnect';
+import { I18nProvider } from '@/i18n';
 import { STREAM_REFRESH_MS } from '@/features/monitoring/use-pcm-stream';
 
 import { DashboardScreen } from './DashboardScreen';
@@ -86,11 +87,13 @@ function renderScreen(props: {
   metrics?: typeof SAFE_AREA_METRICS;
 }) {
   return render(
-    <SafeAreaProvider initialMetrics={props.metrics ?? SAFE_AREA_METRICS}>
-      <PcmConnectionProvider socketFactory={props.socketFactory}>
-        <DashboardScreen storage={props.storage} />
-      </PcmConnectionProvider>
-    </SafeAreaProvider>,
+    <I18nProvider initialLocale="en">
+      <SafeAreaProvider initialMetrics={props.metrics ?? SAFE_AREA_METRICS}>
+        <PcmConnectionProvider socketFactory={props.socketFactory}>
+          <DashboardScreen storage={props.storage} />
+        </PcmConnectionProvider>
+      </SafeAreaProvider>
+    </I18nProvider>,
   );
 }
 
@@ -693,6 +696,33 @@ describe('DashboardScreen fullscreen', () => {
 
     await waitFor(() => expect(paddingTopOf(screen)).toBe(40));
     expect(storage.store.get(FULLSCREEN_STORAGE_KEY)).toBe('0');
+
+    screen.unmount();
+  });
+});
+
+describe('DashboardScreen language', () => {
+  /**
+   * The panel is the only place with translated text, and it is where the
+   * switch lives — so one open panel proves both directions.
+   */
+  it('switches every panel label when a language chip is tapped', async () => {
+    const screen = await renderScreen({ storage: memoryStorage() });
+
+    await openSettingsPanel(screen);
+
+    expect(screen.getByTestId('locale-zh')).toBeTruthy();
+    expect(screen.getByTestId('locale-en')).toBeTruthy();
+    expect(screen.getByText('Fullscreen')).toBeTruthy();
+
+    await fireEvent(screen.getByTestId('locale-zh'), 'press');
+
+    expect(screen.getByText('全屏')).toBeTruthy();
+    expect(screen.queryByText('Fullscreen')).toBeNull();
+
+    await fireEvent(screen.getByTestId('locale-en'), 'press');
+
+    expect(screen.getByText('Fullscreen')).toBeTruthy();
 
     screen.unmount();
   });

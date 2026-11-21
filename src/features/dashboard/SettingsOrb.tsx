@@ -17,6 +17,7 @@ import {
   type OrbPosition,
   type OrbWindow,
 } from './settings-orb';
+import { useI18n } from '@/i18n';
 
 /** Width of the settings sheet, before the small-screen clamp. */
 const PANEL_WIDTH = 280;
@@ -71,6 +72,7 @@ export function SettingsOrb({
   indicator,
   children,
 }: SettingsOrbProps) {
+  const { t } = useI18n();
   const [position, setPosition] = useState(initialPosition);
   /**
    * Where the finger landed when the drag began; `null` between gestures.
@@ -225,7 +227,7 @@ export function SettingsOrb({
         <Pressable
           testID="settings-orb"
           accessibilityRole="button"
-          accessibilityLabel="Dashboard settings"
+          accessibilityLabel={t('panel.settingsA11y')}
           accessibilityState={{ expanded: open }}
           onPress={onToggle}
           style={[
@@ -236,7 +238,7 @@ export function SettingsOrb({
           <View
             testID="connection-light"
             accessibilityRole="image"
-            accessibilityLabel={indicatorLabel(tone)}
+            accessibilityLabel={t(indicatorLabel(tone))}
             style={[styles.orbDot, { backgroundColor: INDICATOR_COLORS[tone] }]}
           />
         </Pressable>
