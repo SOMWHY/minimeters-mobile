@@ -32,8 +32,14 @@ apksigner verify --print-certs minimeters-mobile-<version>-arm64.apk
 ```
 
 ```
-SHA-256: <fill in once, never changes>
+Signer #1 certificate SHA-256 digest:
+0A:78:F0:22:07:78:4E:40:A6:7B:1D:AB:8A:84:1E:14:AD:BB:6C:2B:7E:71:C3:A6:B1:13:00:2A:31:5A:06:20
+Valid from: 2026-11-21 (EAS-managed keystore)
 ```
+
+Verified against both `1.0.0-preview-ota` (versionCode 1) and `1.0.0` release (versionCode 2),
+so installs update in place. If `apksigner` is unavailable, `build-artifacts/apksig-cert.js`
+parses the v2 signing block and prints the same digest.
 
 The fingerprint changing between releases is a red flag: it means the keystore was replaced and
 existing installs can no longer be updated in place.
