@@ -16,7 +16,7 @@
       },
       "android": {
         "buildType": "apk",
-        "gradleCommand": "./gradlew :app:assembleRelease --max-workers=2"
+        "gradleCommand": ":app:assembleRelease --max-workers=2"
       },
       "channel": "preview"
     },
