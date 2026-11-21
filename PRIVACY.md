@@ -1,3 +1,5 @@
+**English** · [简体中文](PRIVACY.zh-CN.md)
+
 # Privacy Policy — MiniMeters Mobile
 
 Last updated: 2026-11-21

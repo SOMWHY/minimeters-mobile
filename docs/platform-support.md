@@ -1,3 +1,5 @@
+**English** · [简体中文](platform-support.zh-CN.md)
+
 # Platform support
 
 What has actually been run, what has only been built, and what would be needed for the platforms
