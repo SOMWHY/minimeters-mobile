@@ -53,8 +53,8 @@ describe('INDICATOR_COLORS', () => {
 
 describe('indicatorLabel', () => {
   it('names each tone', () => {
-    expect(indicatorLabel('idle')).toBe('Not connected');
-    expect(indicatorLabel('live')).toBe('Connected');
-    expect(indicatorLabel('error')).toBe('Connection error');
+    expect(indicatorLabel('idle')).toBe('status.idle');
+    expect(indicatorLabel('live')).toBe('status.connected');
+    expect(indicatorLabel('error')).toBe('status.error');
   });
 });

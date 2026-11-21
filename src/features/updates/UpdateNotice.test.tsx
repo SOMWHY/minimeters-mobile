@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 import { BUILT_IN_THEMES } from '@minimetermobile/ui/dist/theme';
 
 import { UpdateNotice } from './UpdateNotice';
+import { I18nProvider } from '@/i18n';
 
 const theme = BUILT_IN_THEMES[Object.keys(BUILT_IN_THEMES)[0] as keyof typeof BUILT_IN_THEMES];
 
@@ -10,13 +11,15 @@ function renderNotice(
   handlers: { onApply?: jest.Mock; onDismiss?: jest.Mock } = {},
 ) {
   return render(
-    <UpdateNotice
-      phase={phase}
-      theme={theme}
-      topInset={24}
-      onApply={handlers.onApply ?? jest.fn()}
-      onDismiss={handlers.onDismiss ?? jest.fn()}
-    />,
+    <I18nProvider initialLocale="en">
+      <UpdateNotice
+        phase={phase}
+        theme={theme}
+        topInset={24}
+        onApply={handlers.onApply ?? jest.fn()}
+        onDismiss={handlers.onDismiss ?? jest.fn()}
+      />
+    </I18nProvider>,
   );
 }
 

@@ -18,6 +18,7 @@ import {
   savePairing,
   type PairingStorageDeps,
 } from '@/features/connection/pairing-storage';
+import type { ScanErrorCode } from '@/i18n/errors';
 import {
   classifyFailure,
   nextRetryDelay,
@@ -55,7 +56,8 @@ export type PcmStream = {
   /** The server rejected the pairing token; the last frame stays on screen. */
   readonly reauthRequired: boolean;
   readonly fatalError: FatalErrorKind | null;
-  readonly scanError: string | null;
+  /** Why the last scan or manual entry was rejected; `null` when it was accepted. */
+  readonly scanError: ScanErrorCode | null;
   readonly connectionError: string | null;
   readonly protocolError: string | null;
   readonly startScan: () => void;
@@ -128,7 +130,7 @@ export function usePcmStream({
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [reauthRequired, setReauthRequired] = useState(false);
   const [fatalError, setFatalError] = useState<FatalErrorKind | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<ScanErrorCode | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [protocolError, setProtocolError] = useState<string | null>(null);
 
@@ -376,9 +378,7 @@ export function usePcmStream({
 
       if (!result.ok) {
         setScanError(
-          result.reason === 'unsupported_version'
-            ? 'This pairing code uses an unsupported version.'
-            : 'This is not a valid MiniMeters pairing code.',
+          result.reason === 'unsupported_version' ? 'unsupportedVersion' : 'invalidPayload',
         );
         return;
       }
@@ -393,11 +393,7 @@ export function usePcmStream({
       const result = buildManualPairing(address, token);
 
       if (!result.ok) {
-        setScanError(
-          result.reason === 'invalid_token'
-            ? 'Enter the pairing token shown next to the QR code.'
-            : 'Enter the desktop address, for example 192.168.1.20:8422.',
-        );
+        setScanError(result.reason === 'invalid_token' ? 'invalidToken' : 'invalidAddress');
         return;
       }
 

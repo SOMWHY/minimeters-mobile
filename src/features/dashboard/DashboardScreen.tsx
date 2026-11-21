@@ -41,28 +41,16 @@ import {
 import { SettingsOrb } from './SettingsOrb';
 import { useDashboardLayout } from './use-dashboard-layout';
 import { useFullscreen } from './use-fullscreen';
+import { scanErrorKey, LOCALES, useI18n } from '@/i18n';
 import { useLiveAnalysis } from './use-live-analysis';
 
 const themeIds = Object.keys(BUILT_IN_THEMES);
 
-const fatalMessages = {
-  protocol: 'The plugin and the phone disagree about the audio format.',
-  unreachable: 'Lost the connection to the plugin.',
-} as const;
-
-/** Shown when the server rejects the token; the last frame stays on screen. */
-const REAUTH_MESSAGE = 'The pairing code expired. Scan the plugin QR code again.';
-
 /**
- * A rejection on a pairing that never stored a device token.
- *
- * Usually that is an older server build, which can only accept the short-lived
- * QR token — but it is also what a just-upgraded server looks like to a phone
- * that has not re-paired yet, so the wording points at a re-scan first and only
- * blames the build if that does not help.
+ * Language names are written in their own language, never translated — a user
+ * looking for their language should recognise it before switching to it.
  */
-const REAUTH_WITHOUT_DEVICE_TOKEN_MESSAGE =
-  'The pairing code expired and this phone has no device token stored — scan the QR code again; if it keeps failing, update the server build.';
+const LOCALE_NAMES = { zh: '中文', en: 'English' } as const;
 
 export type DashboardScreenProps = {
   /** Injected for tests; defaults to device storage. */
@@ -78,6 +66,7 @@ export type DashboardScreenProps = {
  */
 export function DashboardScreen({ storage }: DashboardScreenProps) {
   const stream = usePcmConnection();
+  const { t, locale, setLocale } = useI18n();
   const { analysis, frame: scopeFrame, history, scopeFrames, meter } = useLiveAnalysis();
 
   const { width, height } = useWindowDimensions();
@@ -229,17 +218,15 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   };
 
   const banner = stream.reauthRequired
-    ? stream.hasDeviceToken
-      ? REAUTH_MESSAGE
-      : REAUTH_WITHOUT_DEVICE_TOKEN_MESSAGE
+    ? t(stream.hasDeviceToken ? 'banner.reauth' : 'banner.reauthNoToken')
     : stream.fatalError
-      ? fatalMessages[stream.fatalError]
+      ? t(stream.fatalError === 'protocol' ? 'banner.protocol' : 'banner.unreachable')
       : stream.reconnecting
-        ? `Reconnecting… (attempt ${stream.retryAttempt})`
+        ? t('banner.reconnecting', { attempt: stream.retryAttempt })
         : stream.connectionError
-          ? `Error: ${stream.connectionError}`
+          ? t('banner.error', { detail: stream.connectionError })
           : stream.protocolError
-            ? `Protocol error: ${stream.protocolError}`
+            ? t('banner.protocolError', { detail: stream.protocolError })
             : null;
 
   const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
@@ -279,7 +266,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           scrollEnabled={!dragging}
         >
           {layout === null ? (
-            <ThemedText type="small">Loading dashboard…</ThemedText>
+            <ThemedText type="small">{t('dashboard.loading')}</ThemedText>
           ) : (
             <DashboardGrid
               testID="dashboard-grid"
@@ -340,7 +327,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
         <View style={styles.toggleRow}>
           <ThemedText type="small" themeColor="textSecondary">
-            Fullscreen
+            {t('panel.fullscreen')}
           </ThemedText>
           {/*
            * A `Pressable` pill, not RN's `Switch`: the native switch swallows
@@ -350,7 +337,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           <Pressable
             testID="fullscreen-toggle"
             accessibilityRole="switch"
-            accessibilityLabel="Fullscreen"
+            accessibilityLabel={t('panel.fullscreen')}
             accessibilityState={{ checked: fullscreen }}
             onPress={() => setFullscreen(!fullscreen)}
             style={[
@@ -372,7 +359,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
 
         <View style={styles.themeRow}>
           <ThemedText type="small" themeColor="textSecondary">
-            Theme
+            {t('panel.theme')}
           </ThemedText>
           <View style={styles.themeChips}>
             {themeIds.map((id) => {
@@ -395,23 +382,49 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           </View>
         </View>
 
+        <View style={styles.themeRow}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {t('panel.language')}
+          </ThemedText>
+          <View style={styles.themeChips}>
+            {LOCALES.map((id) => {
+              const selected = id === locale;
+
+              return (
+                <Pressable
+                  key={id}
+                  testID={`locale-${id}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => setLocale(id)}
+                  style={[styles.chip, selected && styles.chipSelected]}
+                >
+                  <ThemedText type="small" themeColor={selected ? 'text' : 'textSecondary'}>
+                    {LOCALE_NAMES[id]}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         {!stream.isPaired && (
           <>
-            <Button title="Scan plugin QR code" onPress={stream.startScan} />
+            <Button title={t('panel.scanQr')} onPress={stream.startScan} />
             <Button
-              title={manualOpen ? 'Cancel manual entry' : 'Enter address manually'}
+              title={manualOpen ? t('panel.cancelManual') : t('panel.enterManual')}
               onPress={toggleManualEntry}
             />
             {manualOpen && (
               <View style={styles.manualForm}>
                 <ThemedText type="small" themeColor="textSecondary">
-                  Both values are printed next to the QR code in the desktop app.
+                  {t('panel.manualHint')}
                 </ThemedText>
                 <TextInput
                   testID="manual-address"
                   value={manualAddress}
                   onChangeText={setManualAddress}
-                  placeholder="192.168.1.20:8422"
+                  placeholder={t('panel.addressPlaceholder')}
                   placeholderTextColor={theme.colors.axis}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -425,7 +438,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
                   testID="manual-token"
                   value={manualToken}
                   onChangeText={setManualToken}
-                  placeholder="Pairing token"
+                  placeholder={t('panel.tokenPlaceholder')}
                   placeholderTextColor={theme.colors.axis}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -436,11 +449,11 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
                 />
                 {stream.scanError !== null && (
                   <ThemedText testID="manual-error" type="small" themeColor="textSecondary">
-                    {stream.scanError}
+                    {t(scanErrorKey(stream.scanError))}
                   </ThemedText>
                 )}
                 <Button
-                  title="Connect"
+                  title={t('panel.connect')}
                   onPress={() => stream.pairManually(manualAddress, manualToken)}
                 />
               </View>
@@ -451,11 +464,11 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
         {stream.isPaired && (
           <>
             <Button
-              title={editing ? 'Done' : 'Edit layout'}
+              title={editing ? t('panel.done') : t('panel.editLayout')}
               onPress={() => setEditing((current) => !current)}
             />
-            {editing && <Button title="Reset layout" onPress={resetLayout} />}
-            <Button title="Disconnect" onPress={stream.disconnect} />
+            {editing && <Button title={t('panel.resetLayout')} onPress={resetLayout} />}
+            <Button title={t('panel.disconnect')} onPress={stream.disconnect} />
           </>
         )}
 

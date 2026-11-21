@@ -68,14 +68,23 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** Bottom-right corner, inside the safe area — where a thumb already is. */
+/**
+ * Where the orb sits before the user moves it: vertically centred on the right
+ * edge.
+ *
+ * The bottom-right corner is the one place a full-bleed dashboard hides real
+ * information (the last module's readout and, in fullscreen, the gesture bar
+ * area), and a finger naturally lands there while playing. Right-centre keeps it
+ * on the drag rail the user already knows without covering anything.
+ */
 export function defaultOrbPosition(options: {
   readonly window: OrbWindow;
   readonly insets?: OrbInsets;
 }): OrbPosition {
   const insets = options.insets ?? NO_INSETS;
-  const { maxX, maxY } = bounds(options.window, insets);
+  const { maxX, minY, maxY } = bounds(options.window, insets);
 
-  return { x: maxX, y: maxY };
+  return { x: maxX, y: minY + (maxY - minY) / 2 };
 }
 
 /** Keep the orb on screen after a drag, a rotation, or a restore. */
