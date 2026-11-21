@@ -25,6 +25,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { usePcmConnection } from '@/features/connection/connection-context';
 import { PairingScannerOverlay } from '@/features/monitoring/PairingScannerOverlay';
+import { UpdateNotice } from '@/features/updates/UpdateNotice';
+import { useAppUpdate } from '@/features/updates/use-app-update';
 
 import { fitRowsToViewport, gridForWindow, gridViewport, layoutRowCount } from './model';
 import type { LayoutStorageDeps } from './layout-storage';
@@ -165,8 +167,7 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
   const [orbPosition, setOrbPosition] = useState<OrbPosition>(() =>
     defaultOrbPosition({ window: { width, height }, insets: orbInsets }),
   );
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [manualOpen, setManualOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);  const [manualOpen, setManualOpen] = useState(false);
   const [manualAddress, setManualAddress] = useState('');
   const [manualToken, setManualToken] = useState('');
   const toggleManualEntry = useCallback(() => {
@@ -214,6 +215,8 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
     },
     [orbStorage],
   );
+
+  const update = useAppUpdate();
 
   const togglePanel = useCallback(() => setPanelOpen((current) => !current), []);
 
@@ -304,6 +307,14 @@ export function DashboardScreen({ storage }: DashboardScreenProps) {
           )}
         </ScrollView>
       </View>
+
+      <UpdateNotice
+        phase={update.phase}
+        theme={theme}
+        topInset={insets.top}
+        onApply={update.apply}
+        onDismiss={update.dismiss}
+      />
 
       <SettingsOrb
         theme={theme}
